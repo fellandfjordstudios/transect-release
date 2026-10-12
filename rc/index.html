@@ -1,0 +1,1830 @@
+<title>transect</title>
+<!-- THE TAB'S ICON (docs/plans/089): a valley under the moon, inline -- no
+     file to fetch, and no favicon.ico asked for and missing. -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23121618'/%3E%3Ccircle cx='46' cy='18' r='7' fill='%23f3ead2'/%3E%3Cpath d='M0 52 L18 26 L30 40 L42 22 L64 50 L64 64 L0 64Z' fill='%236b9e4a'/%3E%3Cpath d='M0 58 Q32 46 64 58 L64 64 L0 64Z' fill='%23a87c4f'/%3E%3C/svg%3E">
+<!-- A GAME ON THE HOME SCREEN (docs/plans/091): added there, it opens full
+     screen, no address bar -- the manifest's "fullscreen" on Android, the
+     apple-mobile-web-app tags on an iPhone (Share, Add to Home Screen). The
+     service worker an install asks for is coi.js's (plan 055). -->
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="theme-color" content="#121618">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="Transect">
+<!-- THE PAGE IS AS WIDE AS THE PHONE. Without this a mobile browser lays the
+     page out 980 px wide and zooms it to fit: the game draws correctly, but
+     touches reach it in the unzoomed coordinates, so on a 844 px-wide phone a
+     tap on the sun button landed 190 px to its left (measured, 2026-09-23).
+     No pinch zoom: the whole screen is the game's. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Spectral:ital,wght@0,500;1,400&display=swap">
+<style>
+  /* One committed look: dusk in a wooded valley. The game fills the screen, so
+     the page is a dark ground for it in every theme, painted explicitly. */
+  :root {
+    color-scheme: dark;
+    --ground: #0e1411;
+    --surface: #17201b;
+    --line: #2a372f;
+    --ink: #e2e9e0;
+    --muted: #93a498;
+    --fern: #86b98f;
+    --ochre: #d6a25f;
+    --red: #e07a67;
+  }
+  /* Owned here, not inherited: #boot sets a display, which beats the browser's
+     own [hidden] rule and would leave the splash over the running valley. */
+  [hidden] { display: none !important; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  #canvas { display: block; width: 100%; height: 100%; border: 0; outline: none; background: #0a0f0c; }
+  #canvas:focus-visible { outline: 2px solid var(--fern); outline-offset: -2px; }
+
+  #boot {
+    position: fixed; inset: 0; z-index: 10;
+    display: flex; flex-direction: column; justify-content: center; align-items: flex-start;
+    gap: 18px; background: var(--ground);
+    padding: calc(24px + env(safe-area-inset-top, 0px)) max(20px, 8vw) calc(24px + env(safe-area-inset-bottom, 0px));
+  }
+  #boot h1 {
+    margin: 0; font-family: "Spectral", Georgia, "Times New Roman", serif; font-weight: 500;
+    font-size: clamp(40px, 9vw, 72px); letter-spacing: -0.01em; line-height: 1;
+  }
+  #boot .gloss {
+    margin: 0; max-width: 46ch; font-family: "Spectral", Georgia, serif; font-style: italic;
+    font-size: 16px; line-height: 1.5; color: var(--muted); text-wrap: balance;
+  }
+  .rule { width: min(360px, 84vw); height: 3px; background: var(--line); position: relative; overflow: hidden; }
+  .rule i { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--fern); transition: width .2s linear; }
+  /* Survey ticks along the transect line, every tenth of the way. */
+  .rule::after {
+    content: ""; position: absolute; inset: 0;
+    background: repeating-linear-gradient(90deg, transparent 0 calc(10% - 1px), var(--ground) calc(10% - 1px) 10%);
+  }
+  #stat { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; min-height: 1.5em; }
+  .how {
+    display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 6px 0 0;
+    font-size: 12px; color: var(--muted); max-width: 46ch;
+  }
+  .how dt { color: var(--ink); letter-spacing: 0.04em; }
+  .how dd { margin: 0; }
+  #diag {
+    font-size: 12px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere;
+    background: var(--surface); border: 1px solid var(--line); padding: 12px 14px;
+    max-width: min(560px, 90vw); max-height: 50vh; overflow-y: auto;
+  }
+  #diag b { color: var(--red); font-weight: 500; }
+  #stamp {
+    position: fixed; z-index: 20; pointer-events: none;
+    left: calc(8px + env(safe-area-inset-left, 0px));
+    bottom: calc(6px + env(safe-area-inset-bottom, 0px));
+    font-size: 10px; color: #e8efe6b3; letter-spacing: 0.03em;
+  }
+  #report {
+    position: fixed; z-index: 30; inset: calc(10px + env(safe-area-inset-top, 0px)) 10px calc(10px + env(safe-area-inset-bottom, 0px));
+    display: flex; flex-direction: column; gap: 10px;
+    background: var(--surface); border: 1px solid var(--line); padding: 12px;
+    max-width: 720px; margin: 0 auto; touch-action: auto;
+  }
+  #report h2 { margin: 0; font-size: 14px; font-weight: 500; }
+  #report textarea {
+    flex: 1; min-height: 0; width: 100%; box-sizing: border-box; resize: none;
+    background: var(--ground); color: var(--ink); border: 1px solid var(--line);
+    font: 11px/1.45 "IBM Plex Mono", ui-monospace, monospace; padding: 8px;
+    -webkit-user-select: text; user-select: text; touch-action: pan-y;
+  }
+  #report .row { display: flex; gap: 10px; align-items: center; }
+  #report button {
+    font: 500 14px "IBM Plex Mono", ui-monospace, monospace; color: var(--ground);
+    background: var(--fern); border: 0; padding: 10px 18px; min-height: 44px;
+  }
+  #report button.quiet { background: var(--line); color: var(--ink); }
+  #report .note { font-size: 12px; color: var(--muted); }
+  #crash {
+    position: fixed; z-index: 25; left: 50%; transform: translateX(-50%);
+    top: calc(8px + env(safe-area-inset-top, 0px)); width: min(560px, calc(100vw - 32px)); box-sizing: border-box;
+    display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center;
+    background: var(--surface); border: 1px solid var(--red); padding: 10px 12px;
+    font-size: 12px; line-height: 1.45; touch-action: auto;
+  }
+  #crash p { margin: 0; flex: 1 1 220px; }
+  #crash button {
+    font: 500 13px "IBM Plex Mono", ui-monospace, monospace; border: 0; min-height: 40px; padding: 8px 14px;
+    background: var(--fern); color: var(--ground);
+  }
+  #crash button.quiet { background: var(--line); color: var(--ink); }
+  /* THE SPLASH (docs/plans/226): the map under the words, the download its
+     line (page/splash.js). Transect's map is the dark valley's; Norge's page is
+     a sea chart on cream paper. */
+  :root { --map: #2c3a31; --map2: #3a4b3f; --trail: #86b98f; --note: #d6a25f; }
+  body.norge {
+    color-scheme: light;
+    --ground: #efe6d2; --surface: #e4d9c0; --line: #c9bc9e; --ink: #1f2328; --muted: #5b5a52;
+    --fern: #a8322a; --red: #a8322a;
+    --map: #c9bc9e; --map2: #a99a78; --trail: #a8322a; --note: #2f5d7c;
+  }
+  body.norge #stamp { color: #1f232899; }
+  #splash { position: absolute; inset: 0; width: 100%; height: 100%; display: block; z-index: 0; }
+  #boot > :not(#splash) { position: relative; z-index: 1; }
+  #boot.mapped { justify-content: flex-start; padding-top: calc(max(24px, 9vh) + env(safe-area-inset-top, 0px)); }
+  #boot.mapped .rule { display: none; }
+  /* THE RECOVERY'S ONE NOTICE (docs/plans/239): a few seconds, nothing to press. */
+  #toast {
+    position: fixed; z-index: 26; left: 50%; transform: translateX(-50%);
+    bottom: calc(24px + env(safe-area-inset-bottom, 0px)); width: max-content; max-width: min(520px, calc(100vw - 32px));
+    background: var(--surface); color: var(--ink); border: 1px solid var(--line); padding: 10px 14px;
+    font-size: 13px; line-height: 1.45; pointer-events: none;
+  }
+  @media (prefers-reduced-motion: reduce) { .rule i { transition: none; } }
+  /* A build for players: the developer's lines hidden (docs/plans/025). */
+  .public .dev { display: none; }
+  /* The page's stamp over everything is the developer's (docs/plans/226): a
+     player's build keeps its text for the reports, unseen; the start card
+     shows the build in the game (docs/plans/119). */
+  .public #stamp { display: none; }
+</style>
+
+<canvas id="canvas" tabindex="0" aria-label="The valley"></canvas>
+<div id="stamp"></div>
+<!-- NO SPINNER (docs/plans/177; the owner: "people don't understand that the
+     game is actually doing work"): the bar below moves with every byte that
+     arrives, and in the game the way in's buttons fill as the valley grows. -->
+
+<div id="boot">
+  <canvas id="splash" aria-hidden="true"></canvas>
+  <h1>transect</h1>
+  <p class="gloss">Into the wilderness: a night out in a Highland valley, grown on your device as you arrive.</p>
+  <div class="rule" aria-hidden="true"><i id="bar"></i></div>
+  <div id="stat">checking this browser</div>
+  <dl class="how">
+    <dt>phone</dt><dd>left thumb walks, right thumb looks, pinch to zoom, RUN toggles pace</dd>
+    <dt>keys</dt><dd>WASD or arrows to walk, drag to look, Shift to run, wheel or +/- to zoom</dd>
+    <dt>sound</dt><dd>starts with your first touch or key; the speaker button sets sound and music, M mutes</dd>
+    <dt class="dev">storm</dt><dd class="dev">gear button, Weather, then the Storm slider</dd>
+    <dt class="dev">help</dt><dd class="dev">gear button, Measure, Diagnostics: copy it and send it</dd>
+  </dl>
+  <div id="diag" hidden></div>
+</div>
+
+<script>
+// THE SPLASH (docs/plans/226), from the first paint: the product's words, and
+// the map whose line is the download (page/splash.js). A page that cannot draw
+// it keeps the plain bar.
+// THE PAGE'S SPLASH (docs/plans/226; the owner 2026-10-09: "production value
+// ... for both transect and for Norge ... something with JavaScript ... a fun
+// concept", then "let's include taps and notes"). The download drawn as the
+// product's own act: Transect walks a survey line across a contour map with a
+// field note at each tenth, naming what grows in the valley; Norge plots a
+// course on a sea chart with its marks and soundings. A tap places a cairn
+// (Transect) or drops a buoy (Norge). The map is drawn once; a frame redraws
+// only the line, and the frames stop when the download is in, so the splash
+// never competes with the engine's compile for the main thread.
+//
+// The pure half (no page) is what the suite plays under node
+// (test/suite_delivery.gd); page/shell.html makes a TrSplash on its canvas and
+// tools/pack-web.py puts this file and the product's words in the page.
+//
+//   trSplashRng(seed)               a repeatable random in [0, 1)
+//   trSplashField(seed)             the map's height, h(x, y) in [0, 1]
+//   trSplashPath(seed, w, top, bot) the line's points across the band
+//   trSplashNotes(cfg, seed)        the TICKS notes, in the order they appear
+//   trSplashMark(marks, x, y, t)    the marks after a tap: at most MARKS
+//   TrSplash(canvas, cfg)           the drawing: .progress(f), .tap(x, y), .stop()
+var TR_SPLASH = { TICKS: 10, MARKS: 12, POINTS: 240, NOTE_FADE_MS: 500 };
+
+function trSplashRng(seed) {
+  var s = (Math.abs(Math.floor(seed)) % 2147483646) + 1;
+  return function () { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; };
+}
+
+function trSplashField(seed) {
+  var r = trSplashRng(seed), g = [];
+  for (var i = 0; i < 64 * 64; i++) g.push(r());
+  function at(a, b) { return g[((b & 63) * 64) + (a & 63)]; }
+  function vn(px, py) {
+    var xi = Math.floor(px), yi = Math.floor(py), fx = px - xi, fy = py - yi;
+    var sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+    return (at(xi, yi) * (1 - sx) + at(xi + 1, yi) * sx) * (1 - sy) +
+      (at(xi, yi + 1) * (1 - sx) + at(xi + 1, yi + 1) * sx) * sy;
+  }
+  // Three octaves, in CSS pixels: hills a few hundred pixels across.
+  return function (px, py) {
+    var k = 0.004;
+    return vn(px * k, py * k) * 0.6 + vn(px * k * 2.3, py * k * 2.3) * 0.3 + vn(px * k * 5, py * k * 5) * 0.1;
+  };
+}
+
+// A wandering line from 8% to 92% of the width, between `top` and `bot`: three
+// waves of random phase, so it rises and falls and never runs flat on an edge.
+function trSplashPath(seed, w, top, bot) {
+  var r = trSplashRng(seed * 31 + 5), pts = [], mid = (top + bot) / 2, amp = (bot - top) / 2;
+  var p1 = r() * 6.283, p2 = r() * 6.283, p3 = r() * 6.283;
+  for (var i = 0; i <= TR_SPLASH.POINTS; i++) {
+    var t = i / TR_SPLASH.POINTS;
+    var y = mid + amp * (0.6 * Math.sin(6.283 * t * 1.3 + p1) + 0.3 * Math.sin(6.283 * t * 3.1 + p2) + 0.1 * Math.sin(6.283 * t * 7 + p3));
+    pts.push([w * (0.08 + 0.84 * t), Math.max(top, Math.min(bot, y))]);
+  }
+  return pts;
+}
+
+// The notes at the ticks. An ordered list (Norge's course, out from the
+// hamlet) is kept in its order; else the list is shuffled by `seed` (a new
+// day, new notes) and repeated when it is short.
+function trSplashNotes(cfg, seed) {
+  var list = (cfg.notes || []).slice(), out = [];
+  if (!list.length) return out;
+  if (!cfg.ordered) {
+    var r = trSplashRng(seed);
+    for (var i = list.length - 1; i > 0; i--) { var j = Math.floor(r() * (i + 1)), t = list[i]; list[i] = list[j]; list[j] = t; }
+  }
+  for (var k = 0; k < TR_SPLASH.TICKS; k++) out.push(list[k % list.length]);
+  return out;
+}
+
+// A tap's mark, kept with the others; the oldest goes past MARKS.
+function trSplashMark(marks, x, y, t) {
+  var out = marks.concat([{ x: x, y: y, t: t }]);
+  return out.length > TR_SPLASH.MARKS ? out.slice(out.length - TR_SPLASH.MARKS) : out;
+}
+
+function TrSplash(canvas, cfg) {
+  var x = canvas.getContext("2d"), map = document.createElement("canvas");
+  var reduced = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var norge = cfg.product === "norge";
+  var seed = norge ? 11 : 7, day = Math.floor(Date.now() / 86400000);
+  var notes = trSplashNotes(cfg, day), seen = [], marks = [];
+  var W, H, DPR, path, f = 0, raf = 0, stopped = false, busyUntil = 0;
+  function css(n) { return getComputedStyle(document.body).getPropertyValue(n).trim(); }
+  function rgba(hex, a) {
+    var v = parseInt(hex.replace("#", ""), 16);
+    return "rgba(" + (v >> 16 & 255) + "," + (v >> 8 & 255) + "," + (v & 255) + "," + a + ")";
+  }
+
+  function drawMap() {
+    map.width = W; map.height = H;
+    var m = map.getContext("2d"), h = trSplashField(seed), paper = css("--ground");
+    m.fillStyle = paper; m.fillRect(0, 0, W, H);
+    // Contours by marching squares on a coarse grid, one stroke per level.
+    var step = 6, cols = Math.ceil(W / DPR / step) + 1, rows = Math.ceil(H / DPR / step) + 1, v = [], i, j;
+    for (j = 0; j < rows; j++) for (i = 0; i < cols; i++) v.push(h(i * step, j * step));
+    var levels = norge ? 7 : 12, S = step * DPR;
+    if (norge) {
+      // The land washed: a coarse mask, blurred, so the shore reads as land.
+      var wash = document.createElement("canvas"); wash.width = cols; wash.height = rows;
+      var wm = wash.getContext("2d"), im = wm.createImageData(cols, rows);
+      for (j = 0; j < rows * cols; j++) { im.data[j * 4] = 196; im.data[j * 4 + 1] = 170; im.data[j * 4 + 2] = 112; im.data[j * 4 + 3] = v[j] > 0.55 ? 34 : 0; }
+      wm.putImageData(im, 0, 0); m.save(); m.filter = "blur(" + 3 * DPR + "px)";
+      m.drawImage(wash, 0, 0, cols * S, rows * S); m.restore();
+    }
+    for (var L = 1; L < levels; L++) {
+      var lv = 0.25 + L * 0.5 / levels;
+      m.strokeStyle = css(L % 4 === 0 ? "--map2" : "--map"); m.lineWidth = (L % 4 === 0 ? 1.4 : 0.8) * DPR;
+      m.beginPath();
+      for (j = 0; j < rows - 1; j++) for (i = 0; i < cols - 1; i++) {
+        var a = v[j * cols + i], b = v[j * cols + i + 1], c = v[(j + 1) * cols + i + 1], d = v[(j + 1) * cols + i], p = [];
+        if ((a < lv) !== (b < lv)) p.push([(i + (lv - a) / (b - a)) * S, j * S]);
+        if ((b < lv) !== (c < lv)) p.push([(i + 1) * S, (j + (lv - b) / (c - b)) * S]);
+        if ((d < lv) !== (c < lv)) p.push([(i + (lv - d) / (c - d)) * S, (j + 1) * S]);
+        if ((a < lv) !== (d < lv)) p.push([i * S, (j + (lv - a) / (d - a)) * S]);
+        if (p.length >= 2) { m.moveTo(p[0][0], p[0][1]); m.lineTo(p[1][0], p[1][1]); }
+        if (p.length === 4) { m.moveTo(p[2][0], p[2][1]); m.lineTo(p[3][0], p[3][1]); }
+      }
+      m.stroke();
+    }
+    // The title's corner kept quiet: the map fades under the words.
+    var gr = m.createRadialGradient(W * 0.12, H * 0.16, 0, W * 0.12, H * 0.16, Math.max(W, H) * 0.6);
+    gr.addColorStop(0, rgba(paper, 0.9)); gr.addColorStop(0.45, rgba(paper, 0.85)); gr.addColorStop(1, rgba(paper, 0));
+    m.fillStyle = gr; m.fillRect(0, 0, W, H);
+    if (norge) {
+      var rx = W - 70 * DPR, ry = H - 90 * DPR, rr = 30 * DPR;
+      m.strokeStyle = css("--map2"); m.lineWidth = DPR;
+      m.beginPath(); m.arc(rx, ry, rr, 0, 7); m.stroke();
+      for (var k = 0; k < 16; k++) {
+        var an = k * Math.PI / 8, len = k % 4 ? rr * 0.55 : rr * 1.15;
+        m.beginPath(); m.moveTo(rx, ry); m.lineTo(rx + Math.sin(an) * len, ry - Math.cos(an) * len); m.stroke();
+      }
+      m.fillStyle = css("--ink"); m.font = 12 * DPR + "px Spectral, Georgia, serif"; m.textAlign = "center";
+      m.fillText("N", rx, ry - rr * 1.35);
+    }
+  }
+
+  function layout() {
+    DPR = Math.min(2, window.devicePixelRatio || 1);
+    W = Math.round(innerWidth * DPR); H = Math.round(innerHeight * DPR);
+    canvas.width = W; canvas.height = H;
+    // The band under the words: below what the page says, at most 30% tall.
+    var under = cfg.under ? cfg.under() : innerHeight * 0.55;
+    var top = Math.max(innerHeight * 0.5, Math.min(innerHeight * 0.8, under + 36));
+    var bot = Math.min(innerHeight - 48, top + innerHeight * 0.3);
+    path = trSplashPath(seed, W, top * DPR, Math.max(top, bot) * DPR);
+    drawMap();
+  }
+
+  function cairn(m) {
+    x.fillStyle = css("--note");
+    [[0, 0, 6], [0, -6, 4.5], [0.5, -10.5, 3]].forEach(function (s) {
+      x.beginPath(); x.ellipse(m.x * DPR + s[0] * DPR, m.y * DPR + s[1] * DPR, s[2] * DPR, s[2] * 0.62 * DPR, 0, 0, 7); x.fill();
+    });
+  }
+  function buoy(m, now) {
+    var age = reduced ? 1 : Math.min(1, (now - m.t) / 900);
+    x.strokeStyle = css("--note"); x.lineWidth = DPR; x.globalAlpha = 1 - age;
+    x.beginPath(); x.arc(m.x * DPR, m.y * DPR, (6 + 18 * age) * DPR, 0, 7); x.stroke(); x.globalAlpha = 1;
+    x.fillStyle = css("--trail"); x.beginPath(); x.arc(m.x * DPR, m.y * DPR, 4.5 * DPR, 0, 7); x.fill();
+    x.fillStyle = css("--ground"); x.fillRect(m.x * DPR - 4.5 * DPR, m.y * DPR - 1 * DPR, 9 * DPR, 2 * DPR);
+  }
+
+  function draw(now) {
+    x.drawImage(map, 0, 0);
+    var n = Math.floor(Math.max(0, Math.min(1, f)) * (path.length - 1)), i;
+    x.lineCap = "round"; x.lineJoin = "round";
+    // The way still to go, dashed and faint; the way come, drawn.
+    x.setLineDash([3 * DPR, 6 * DPR]); x.strokeStyle = css("--map2"); x.lineWidth = 1.2 * DPR;
+    x.beginPath(); x.moveTo(path[n][0], path[n][1]);
+    for (i = n; i < path.length; i++) x.lineTo(path[i][0], path[i][1]);
+    x.stroke();
+    x.setLineDash(norge ? [10 * DPR, 5 * DPR] : []); x.strokeStyle = css("--trail"); x.lineWidth = 2.4 * DPR;
+    x.beginPath(); x.moveTo(path[0][0], path[0][1]);
+    for (i = 1; i <= n; i++) x.lineTo(path[i][0], path[i][1]);
+    x.stroke(); x.setLineDash([]);
+    x.font = 12 * DPR + "px Spectral, Georgia, serif"; x.textAlign = "center";
+    for (var k = 1; k <= TR_SPLASH.TICKS; k++) {
+      var q = path[Math.round(k / TR_SPLASH.TICKS * (path.length - 1))], reached = f >= k / TR_SPLASH.TICKS, up = k % 2 ? -1 : 1;
+      x.strokeStyle = css(reached ? "--trail" : "--map2"); x.lineWidth = 1.2 * DPR;
+      x.beginPath(); x.moveTo(q[0], q[1] - 6 * DPR); x.lineTo(q[0], q[1] + 6 * DPR); x.stroke();
+      // A narrow screen has room for every other note, above and below in turn.
+      var narrow = W / DPR < 640, shown = !narrow || k % 2 === 0;
+      if (narrow) up = k % 4 ? -1 : 1;
+      if (reached && notes[k - 1] && shown) {
+        if (!seen[k]) seen[k] = now;
+        var age = reduced ? 1 : Math.min(1, (now - seen[k]) / TR_SPLASH.NOTE_FADE_MS);
+        if (age < 1) busyUntil = Math.max(busyUntil, seen[k] + TR_SPLASH.NOTE_FADE_MS);
+        x.globalAlpha = age; x.fillStyle = css("--note");
+        // Clear of the line under the words, not just of the tick.
+        var half = x.measureText(notes[k - 1]).width / 2 + 4 * DPR, lo = q[1], hi = q[1];
+        for (var pi = 0; pi < path.length; pi++) if (Math.abs(path[pi][0] - q[0]) < half) { lo = Math.min(lo, path[pi][1]); hi = Math.max(hi, path[pi][1]); }
+        var drift = 6 * (1 - age) * DPR;
+        x.fillText(notes[k - 1], q[0], up < 0 ? lo - 12 * DPR - drift : hi + 20 * DPR + drift);
+        x.globalAlpha = 1;
+      }
+    }
+    marks.forEach(function (m) { if (cfg.tap === "buoy") buoy(m, now); else cairn(m); });
+    var hd = path[n], pulse = (reduced || f >= 1) ? 0 : Math.sin(now / 300) * 1.5;
+    x.fillStyle = css("--trail"); x.beginPath(); x.arc(hd[0], hd[1], (5 + pulse) * DPR, 0, 7); x.fill();
+  }
+
+  // Frames run while the download moves, a fading note settles or a buoy's
+  // ring spreads; then the splash is still until something changes.
+  var drawn = -1e9;
+  function frame(now) {
+    raf = 0;
+    // Hidden (the device's card, a crash): no frames until shown and moved.
+    if (stopped || !canvas.getClientRects().length) return;
+    // At most 30 frames a second: the line moves slowly; the thread is shared.
+    if (now - drawn >= 32) { draw(now); drawn = now; }
+    var settling = now < busyUntil || (cfg.tap === "buoy" && marks.some(function (m) { return now - m.t < 900; }));
+    if ((f < 1 && !reduced) || settling) raf = requestAnimationFrame(frame);
+  }
+  function kick() { if (!raf && !stopped) raf = requestAnimationFrame(frame); }
+
+  layout();
+  addEventListener("resize", function () { if (!stopped) { layout(); kick(); } });
+  kick();
+  return {
+    progress: function (v) { f = Math.max(f, Math.min(1, v)); kick(); },
+    tap: function (px, py) { marks = trSplashMark(marks, px, py, performance.now()); kick(); },
+    stop: function () { stopped = true; if (raf) cancelAnimationFrame(raf); raf = 0; },
+    notes: notes
+  };
+}
+if (typeof module !== "undefined") module.exports = { TR_SPLASH: TR_SPLASH, trSplashRng: trSplashRng, trSplashField: trSplashField,
+  trSplashPath: trSplashPath, trSplashNotes: trSplashNotes, trSplashMark: trSplashMark };
+
+(function () {
+  var cfg = {"title": "Transect", "gloss": "Into the wilderness: a night out in a Highland valley, grown on your device as you arrive.", "tap": "cairn", "product": "transect", "notes": ["Rowan", "Downy birch", "Pine", "Bramble", "Meadow buttercup", "Dock", "Rosebay willowherb", "Yellow rattle", "Fern", "Moss", "Mountain hare", "Fallen trunk", "Fallen birch", "Erratic", "Fishing station", "Village house"], "ordered": false};
+  var boot = document.getElementById("boot"), cv = document.getElementById("splash");
+  document.body.classList.add(cfg.product);
+  boot.querySelector("h1").textContent = cfg.title;
+  boot.querySelector(".gloss").textContent = cfg.gloss;
+  var how = boot.querySelector(".how");
+  cfg.under = function () { return how.getBoundingClientRect().bottom; };
+  try {
+    if (!cv.getContext("2d")) return;
+    boot.classList.add("mapped");
+    window.__trSplash = TrSplash(cv, cfg);
+  } catch (e) { boot.classList.remove("mapped"); return; }
+  // A tap on the map leaves a cairn, or drops a buoy.
+  cv.addEventListener("pointerdown", function (e) { window.__trSplash.tap(e.clientX, e.clientY); });
+})();
+</script>
+
+<div id="toast" role="status" hidden></div>
+<div id="crash" role="alert" hidden>
+  <p id="crash-text">The last walk stopped unexpectedly.</p>
+  <button id="crash-copy" type="button">Copy crash report</button>
+  <button id="crash-close" class="quiet" type="button" aria-label="Dismiss">Dismiss</button>
+</div>
+
+<div id="report" hidden>
+  <h2>transect diagnostics</h2>
+  <textarea id="report-text" readonly spellcheck="false"></textarea>
+  <div class="row">
+    <button id="test-tone" class="quiet" type="button">Tone A</button>
+    <button id="test-media" class="quiet" type="button">Tone B</button>
+    <button id="test-strike" class="quiet" type="button">Strike</button>
+    <span class="note">A: game audio path. B: phone media path. Strike: lightning ahead.</span>
+  </div>
+  <div class="row">
+    <button id="report-copy" type="button">Copy</button>
+    <button id="report-close" class="quiet" type="button">Close</button>
+    <span id="report-note" class="note"></span>
+  </div>
+</div>
+
+<script>
+// THE NEXT BUILD (docs/plans/186; dispatch row 107): before anything loads, a
+// player who chose the next build is sent to it from the release's page --
+// the installed app opens the release's address, and arrives there. Its state
+// is page/channel.js; the game asks and switches through TrChannel
+// (src/delivery/channel.gd): `window.__trChannel`, `window.__trChannelTo`.
+(function () {
+  var KEY = "transect.channel";
+  // THE NEXT BUILD (docs/plans/186; dispatch row 107, "Opt into the next
+// build"): which build this page is and where an opted-in player belongs. The
+// candidate is the release's site at `rc/` beside it (tools/release.sh
+// --candidate; --promote copies it to the root byte for byte), so the page
+// cannot be told at build time which it is: its address says. The choice is
+// kept per device (localStorage, the origin's: the release and `rc/` share it,
+// and the engine's saved files too). `?release` in the address drops the
+// choice: the way back when the next build cannot reach its own settings.
+//
+//   trChannelRoute(pathname, search, stored) ->
+//     {current: "release" | "candidate", release, candidate (their paths),
+//      opted (the choice after this address), drop (forget it now),
+//      go (the path to go to before anything loads, or "")}
+function trChannelRoute(pathname, search, stored) {
+  var onRc = /\/rc\/(index\.html)?$/.test(pathname);
+  var base = onRc ? pathname.replace(/rc\/(index\.html)?$/, "") : pathname.replace(/[^/]*$/, "");
+  var drop = /[?&]release(=|&|$)/.test(search || "");
+  var opted = !drop && stored === "candidate";
+  return { current: onRc ? "candidate" : "release", release: base, candidate: base + "rc/",
+    opted: opted, drop: drop, go: (!onRc && opted) ? base + "rc/" : "" };
+}
+if (typeof module !== "undefined") module.exports = trChannelRoute;
+
+  var stored = null;
+  try { stored = localStorage.getItem(KEY); } catch (e) { stored = null; }
+  var r = trChannelRoute(location.pathname, location.search, stored);
+  if (r.drop) { try { localStorage.removeItem(KEY); } catch (e) {} }
+  window.__trChannel = r;
+  window.__trChannelTo = function (to) {
+    try { if (to === "candidate") localStorage.setItem(KEY, "candidate"); else localStorage.removeItem(KEY); } catch (e) {}
+    // Half a second for the night's copy to the device's store to finish
+    // (the game saved it just now, TrChannel.switch_to).
+    setTimeout(function () { location.assign(to === "candidate" ? r.candidate : r.release); }, 500);
+    return to;
+  };
+  if (r.go) {
+    // Nothing more starts here: no worker, no engine.
+    window.__trLeaving = true;
+    window.__trIsolating = true;
+    location.replace(r.go + location.search + location.hash);
+  }
+})();
+</script>
+<script>
+// THE THREADED RUNTIME NEEDS AN ISOLATED PAGE (docs/plans/055): when this
+// build ships one, page/coi.js -- a service worker adding the two
+// cross-origin isolation headers a static host cannot send -- is registered
+// and the page reloads once under it. A browser that will not run it keeps
+// the page un-isolated, and the single-threaded runtime loads instead.
+(function () {
+  var mt = ["godot-mt.0.wasm", "godot-mt.1.wasm", "godot-mt.2.wasm", "godot-mt.3.wasm", "godot-mt.4.wasm"];
+  window.__trIsolated = self.crossOriginIsolated === true;
+  if (window.__trLeaving) return;
+  if (!mt || window.__trIsolated || !("serviceWorker" in navigator)) return;
+  try { if (sessionStorage.getItem("tr-coi")) return; sessionStorage.setItem("tr-coi", "1"); } catch (e) { return; }
+  window.__trIsolating = true;
+  navigator.serviceWorker.register("coi.js").then(function (reg) {
+    var go = function () { location.reload(); };
+    if (navigator.serviceWorker.controller) { go(); return; }
+    navigator.serviceWorker.addEventListener("controllerchange", go);
+    if (reg.active) go();
+  }).catch(function () { window.__trIsolating = false; });
+})();
+</script>
+<script>
+// THE BUILD'S MODE (tools/pack-web.py, docs/plans/025): a build for players
+// shows none of the developer's lines, and takes no scene from its address;
+// `?dev` gives them back, as it gives the game its tools.
+var MODE = "public";
+// THE WALK'S RECORD (src/delivery/walk_post.gd, docs/plans/111): the game
+// hands the latest record of the walk here, allowed or not; the page sends
+// it to the collector (the build's TRANSECT_COLLECTOR_URL) once, when the walk
+// ends or the page goes away mid-walk. No address, nothing is sent: the
+// record stays on the device.
+window.__trCollector = "https://sessions.optilyr.com/v1/sessions";
+(function () {
+  var pending = null, sent = false;
+  // What left, for the diagnostics copy (dispatch row 83): a player can see
+  // that nothing was sent, or what was.
+  window.__trSent = { count: 0, last: "" };
+  function send() {
+    if (sent || !pending || !window.__trCollector) return;
+    sent = true;
+    window.__trSent.count++;
+    window.__trSent.last = new Date().toISOString();
+    var body = pending;
+    try {
+      if (!(navigator.sendBeacon && navigator.sendBeacon(window.__trCollector, new Blob([body], { type: "text/plain" }))))
+        fetch(window.__trCollector, { method: "POST", body: body, keepalive: true, headers: { "content-type": "text/plain" } }).catch(function () {});
+    } catch (e) {}
+  }
+  window.__trWalk = function (json, final, allowed) {
+    var walk = null;
+    try { walk = JSON.parse(json).walk; } catch (e) {}
+    if (walk !== window.__trWalkId) sent = false;  // a new walk
+    window.__trWalkId = walk;
+    pending = allowed ? json : null;
+    if (final) { send(); pending = null; }
+  };
+  // THE CRASH RIDES THE WALK'S RECORD (docs/plans/181): when the watchdog
+  // fires, the latest allowed record goes now, ended "crash", with what was
+  // binding. Diagnostics off, or over the day's budget: nothing is held, so
+  // nothing goes.
+  window.__trWalkCrash = function (crash) {
+    if (!pending) return false;
+    try {
+      var r = JSON.parse(pending);
+      r.crash = crash;
+      r.sitting.ended = "crash";
+      pending = JSON.stringify(r);
+    } catch (e) { return false; }
+    send();
+    return true;
+  };
+  window.addEventListener("pagehide", send);
+})();
+// The game says when its start screen answers (src/main.gd); nothing on the
+// page waits on it now that the spinner is gone (docs/plans/177).
+window.__trLoaded = function () {};
+var DEV = MODE === "dev" || /[?&]dev(=|&|$)/.test(location.search);
+if (!DEV) document.documentElement.classList.add("public");
+// THE OWNER'S SWITCH (docs/plans/030): `trDev()` in this console turns the
+// game's developer tools on, `trDev()` again off (or `trDev(true|false)`),
+// in the running game -- no reload. Said nowhere on the page.
+window.trDev = function (on) {
+  if (!window.__tr_dev) return "transect: the game is still starting; try again in a moment";
+  window.__tr_dev(on === undefined ? -1 : (on ? 1 : 0));
+  return window.__trOut;
+};
+// THE BATTERY, where the browser tells (docs/plans/067; Chrome on Android:
+// navigator.getBattery; Safari tells nothing): kept for the game's load meter.
+if (navigator.getBattery) {
+  navigator.getBattery().then(function (b) {
+    var keep = function () { window.__trBattery = { level: b.level, charging: b.charging }; };
+    keep();
+    b.addEventListener("levelchange", keep);
+    b.addEventListener("chargingchange", keep);
+  }).catch(function () {});
+}
+</script>
+<script>
+// DIAGNOSTICS AND AUDIO, installed before the engine loads, so they see
+// everything it does.
+(function () {
+  "use strict";
+  var started = Date.now();
+  function stamp() { return ((Date.now() - started) / 1000).toFixed(1) + "s"; }
+
+  // THE LOG: the engine prints to the console; the last lines are kept for
+  // the diagnostics report.
+  var LOG = [];
+  function keep(kind, args) {
+    var text = Array.prototype.map.call(args, function (a) {
+      if (a instanceof Error) return a.message;
+      try { return typeof a === "string" ? a : JSON.stringify(a); } catch (e) { return String(a); }
+    }).join(" ");
+    LOG.push(stamp() + " " + kind + " " + text);
+    if (LOG.length > 400) LOG.splice(0, LOG.length - 400);
+    // The engine says its abort here before it throws (Module.abort).
+    if (kind === "error" && /^Aborted\(/.test(text)) dogEvent("abort", text);
+  }
+  ["log", "warn", "error", "info"].forEach(function (k) {
+    var orig = console[k] ? console[k].bind(console) : function () {};
+    console[k] = function () { keep(k, arguments); orig.apply(null, arguments); };
+  });
+  window.addEventListener("error", function (e) {
+    keep("page-error", [e.message + " @" + (e.filename || "") + ":" + (e.lineno || "")]);
+    dogEvent("error", (e.error && e.error.name ? e.error.name + ": " : "") + e.message);
+  });
+  window.addEventListener("unhandledrejection", function (e) {
+    var r = e.reason;
+    keep("rejection", [String(r && r.message || r)]);
+    dogEvent("rejection", (r && r.name ? r.name + ": " : "") + String(r && r.message || r));
+  });
+
+  // AUDIO. Browsers let a page make sound only after a user gesture, and iOS
+  // Safari is strict about which: a touch END or a click, not a touch start,
+  // and the context must play something inside that event to unlock. The
+  // engine resumes its context from its own input callbacks, which does not
+  // satisfy iOS. So every AudioContext it makes is tracked here, and the
+  // first touch end, click or key resumes them all and plays one silent
+  // sample. On iOS the ring/silent switch also mutes Web Audio unless the
+  // page's audio session is "playback" (Safari 16.4 and later).
+  var AUDIO = { contexts: [], unlocks: 0, sources: 0, session: "n/a", lastResume: "", media: "not started", tests: [] };
+  window.__trAudio = AUDIO;
+  var Native = window.AudioContext || window.webkitAudioContext;
+  if (Native) {
+    var Tracked = function (opts) {
+      var ctx = opts ? new Native(opts) : new Native();
+      AUDIO.contexts.push(ctx);
+      keep("audio", ["context created: " + ctx.state + " at " + ctx.sampleRate + " Hz"]);
+      ctx.addEventListener && ctx.addEventListener("statechange", function () { keep("audio", ["context now " + ctx.state]); });
+      return ctx;
+    };
+    Tracked.prototype = Native.prototype;
+    window.AudioContext = Tracked;
+    if (window.webkitAudioContext) window.webkitAudioContext = Tracked;
+    if (window.AudioBufferSourceNode) {
+      var start = AudioBufferSourceNode.prototype.start;
+      AudioBufferSourceNode.prototype.start = function () { AUDIO.sources++; return start.apply(this, arguments); };
+    }
+  }
+  // A WAV of `seconds` of a `hz` sine (0 for silence), as a data URI.
+  function wav(seconds, hz, level) {
+    var rate = 22050, n = Math.floor(seconds * rate), bytes = new Uint8Array(44 + n * 2), v = new DataView(bytes.buffer);
+    function str(o, t) { for (var i = 0; i < t.length; i++) bytes[o + i] = t.charCodeAt(i); }
+    str(0, "RIFF"); v.setUint32(4, 36 + n * 2, true); str(8, "WAVEfmt "); v.setUint32(16, 16, true);
+    v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true);
+    v.setUint16(32, 2, true); v.setUint16(34, 16, true); str(36, "data"); v.setUint32(40, n * 2, true);
+    for (var i = 0; i < n; i++) {
+      var fade = Math.min(1, i / 400, (n - i) / 400);
+      v.setInt16(44 + i * 2, hz ? Math.round(Math.sin(2 * Math.PI * hz * i / rate) * 32767 * level * fade) : 0, true);
+    }
+    var bin = ""; for (var k = 0; k < bytes.length; k++) bin += String.fromCharCode(bytes[k]);
+    return "data:audio/wav;base64," + btoa(bin);
+  }
+  // THE SILENT SWITCH. On an iPhone, Web Audio plays in the "ambient" audio
+  // session, which the ring/silent switch mutes -- and in an app's built-in
+  // browser (the owner's first report: iOS 18.7 in the Claude app, context
+  // running, 379 sounds started, nothing heard) navigator.audioSession does
+  // not take. A media element playing puts the page in the "playback" session,
+  // which the switch does not mute, and Web Audio then plays with it. So the
+  // first gesture starts a silent <audio> loop and keeps it going (the trick
+  // of feross's unmute-ios-audio).
+  var media = null;
+  function startMedia(why) {
+    if (media && !media.paused) return;
+    if (!media) {
+      media = document.createElement("audio");
+      media.setAttribute("playsinline", "");
+      media.setAttribute("x-webkit-airplay", "deny");
+      media.loop = true;
+      media.preload = "auto";
+      media.src = wav(1.0, 0, 0);
+      media.disableRemotePlayback = true;
+    }
+    var p = media.play();
+    if (p && p.then) {
+      p.then(function () { AUDIO.media = "playing (started on " + why + ")"; },
+        function (err) { AUDIO.media = "refused on " + why + ": " + err.name + " " + err.message; });
+    }
+  }
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "visible" && media && media.paused) startMedia("return to the page");
+  });
+  window.__trTone = function (how) {
+    if (how === "media") {
+      var a = new Audio(wav(0.8, 440, 0.4));
+      a.setAttribute("playsinline", "");
+      var p = a.play();
+      AUDIO.tests.push("media tone requested");
+      if (p && p.then) p.then(function () { AUDIO.tests.push("media tone playing"); }, function (err) { AUDIO.tests.push("media tone refused: " + err.name); });
+      return;
+    }
+    var ctx = AUDIO.contexts[0];
+    if (!ctx) { AUDIO.tests.push("web audio tone: no context"); return; }
+    try {
+      var o = ctx.createOscillator(), g = ctx.createGain();
+      o.frequency.value = 660; g.gain.value = 0.0;
+      g.gain.setTargetAtTime(0.3, ctx.currentTime, 0.02);
+      g.gain.setTargetAtTime(0.0, ctx.currentTime + 0.7, 0.05);
+      o.connect(g); g.connect(ctx.destination);
+      o.start(); o.stop(ctx.currentTime + 1.0);
+      AUDIO.tests.push("web audio tone started, context " + ctx.state);
+    } catch (err) { AUDIO.tests.push("web audio tone failed: " + err.message); }
+  };
+
+  function unlock(e) {
+    AUDIO.unlocks++;
+    startMedia(e.type);
+    try {
+      if (navigator.audioSession && navigator.audioSession.type !== "playback") {
+        navigator.audioSession.type = "playback";
+      }
+      AUDIO.session = navigator.audioSession ? navigator.audioSession.type : "not supported";
+    } catch (err) { AUDIO.session = "error: " + err.message; }
+    AUDIO.contexts.forEach(function (ctx) {
+      if (ctx.state !== "running") {
+        ctx.resume().then(function () { AUDIO.lastResume = "ok on " + e.type; },
+          function (err) { AUDIO.lastResume = "failed on " + e.type + ": " + err.message; });
+      }
+      try {
+        var b = ctx.createBuffer(1, 1, ctx.sampleRate);
+        var src = ctx.createBufferSource();
+        src.buffer = b;
+        src.connect(ctx.destination);
+        src.start(0);
+      } catch (err) { /* nothing to unlock with */ }
+    });
+  }
+  ["touchend", "pointerup", "click", "keydown"].forEach(function (t) {
+    document.addEventListener(t, unlock, { capture: true, passive: true });
+  });
+
+  // THE FLIGHT RECORDER. When iOS runs out of memory for a page it kills the
+  // page's process outright and the app shows its own "try again": no event
+  // fires, nothing on the page runs, and whatever it knew is gone. So the
+  // page writes down how it is every few seconds -- memory above all: the
+  // WebAssembly heap, the decoded audio, the game's own counts -- and marks a
+  // session that ends properly (pagehide). A session found unmarked on the
+  // next load ended some other way, and its last notes are the crash report.
+  var MEM = { wasm: null, audioBytes: 0, audioBuffers: 0, wasmHigh: 0, jsHigh: 0 };
+  // The memory high-water marks, for the crash record (docs/plans/181).
+  function high() {
+    if (MEM.wasm) MEM.wasmHigh = Math.max(MEM.wasmHigh, MEM.wasm.buffer.byteLength);
+    if (performance.memory) MEM.jsHigh = Math.max(MEM.jsHigh, performance.memory.usedJSHeapSize);
+  }
+  function grab(r) {
+    try {
+      var inst = r && (r.instance || r);
+      var ex = inst && inst.exports;
+      for (var k in ex) if (ex[k] instanceof WebAssembly.Memory) MEM.wasm = ex[k];
+    } catch (e) { /* not an instance */ }
+    return r;
+  }
+  if (typeof WebAssembly === "object") {
+    ["instantiate", "instantiateStreaming"].forEach(function (name) {
+      var orig = WebAssembly[name];
+      if (orig) WebAssembly[name] = function () { return orig.apply(this, arguments).then(grab); };
+    });
+  }
+  if (window.BaseAudioContext && BaseAudioContext.prototype.createBuffer) {
+    var createBuffer = BaseAudioContext.prototype.createBuffer;
+    BaseAudioContext.prototype.createBuffer = function (channels, length) {
+      MEM.audioBytes += channels * length * 4;
+      MEM.audioBuffers++;
+      return createBuffer.apply(this, arguments);
+    };
+  }
+  function mbs(b) { return (b / 1048576).toFixed(0) + " MB"; }
+  function memLine() {
+    var parts = [];
+    if (MEM.wasm) parts.push("wasm heap " + mbs(MEM.wasm.buffer.byteLength));
+    var ga = window.__godotAudio;
+    if (ga && ga.samples) {
+      var held = 0;
+      ga.samples.forEach(function (smp) { var b = smp._audioBuffer; if (b) held += b.length * b.numberOfChannels * 4; });
+      parts.push("audio held " + mbs(held) + " in " + ga.samples.size + " sounds, " + (ga.sampleNodes ? ga.sampleNodes.size : "?") + " playing");
+    }
+    parts.push("audio made " + mbs(MEM.audioBytes) + " in " + MEM.audioBuffers + " buffers");
+    // Sounds started a second, lately: a few while walking; tens means a
+    // sound restarting every frame, which is heard as a buzz (it was, over
+    // the rain, until src/audio/soundscape.gd stopped pausing loops).
+    var now = Date.now();
+    if (!MEM.startsAt || now - MEM.startsAt >= 4000) {
+      if (MEM.startsAt) MEM.startsRate = (AUDIO.sources - MEM.starts) * 1000 / (now - MEM.startsAt);
+      MEM.starts = AUDIO.sources; MEM.startsAt = now;
+    }
+    if (MEM.startsRate != null) parts.push("sounds started " + MEM.startsRate.toFixed(1) + "/s");
+    if (performance.memory) parts.push("js heap " + mbs(performance.memory.usedJSHeapSize));
+    return parts.join(", ");
+  }
+  var FLIGHT_KEY = "transect.flight", CRASH_KEY = "transect.crash";
+  function store(key, value) {
+    try { if (value === null) localStorage.removeItem(key); else localStorage.setItem(key, JSON.stringify(value)); return true; }
+    catch (e) { return false; }
+  }
+  function fetchStored(key) {
+    try { var v = localStorage.getItem(key); return v ? JSON.parse(v) : null; } catch (e) { return null; }
+  }
+  // The last session's notes, read before this one overwrites them.
+  var previous = fetchStored(FLIGHT_KEY);
+  var crash = null;
+  if (previous && !previous.clean) {
+    crash = previous;
+    store(CRASH_KEY, crash);
+  } else {
+    crash = fetchStored(CRASH_KEY);
+  }
+  var flight = { build: "", started: new Date().toISOString(), clean: false, beats: [], log: [], ua: navigator.userAgent };
+  function beat(why) {
+    var game = null;
+    try { if (window.transect && window.transect.state) game = window.transect.state(); } catch (e) { game = null; }
+    high();
+    var line = stamp() + " " + (why || "beat") + " | " + document.visibilityState + " | " + memLine();
+    if (game) {
+      var m = game.memory || {};
+      line += " | game " + m.static_mb + " MB static, " + m.objects + " objects, " + m.nodes + " nodes, " +
+        m.orphans + " orphans, video " + m.video_mb + " MB, chunks " + m.chunks + " | fps " + game.fps +
+        " | walked " + Math.round((game.walker || {}).from_start_m || 0) + " m | storm " +
+        JSON.stringify((game.storm || {}).counts || {}) + " | sound " + ((game.sound || {}).on ? "on" : "off");
+    }
+    flight.build = document.getElementById("stamp") ? document.getElementById("stamp").textContent : "";
+    flight.last = new Date().toISOString();
+    flight.beats.push(line);
+    if (flight.beats.length > 24) flight.beats.splice(0, flight.beats.length - 24);
+    flight.log = LOG.slice(-40);
+    store(FLIGHT_KEY, flight);
+  }
+  setInterval(beat, 5000);
+  document.addEventListener("visibilitychange", function () { beat("now " + document.visibilityState); });
+  window.addEventListener("pagehide", function () { flight.clean = true; beat("page closed"); });
+
+  // THE SAVE ON HIDING (docs/plans/108 step 6). The engine copies the game's
+  // files to IndexedDB on the frame after each write, and a hidden page draws
+  // no frames: iOS closes a hidden page (a home-screen app swiped away, a tab
+  // dropped for memory) with the last save never copied. So the game writes
+  // the night and starts the copy now, inside this event (window.__tr_hidden,
+  // src/main.gd). Asked for persistence too, where it is the app on the home
+  // screen: there the browser grants it without asking, so nothing prompts.
+  function trHidden() {
+    if (window.__tr_hidden) { try { window.__tr_hidden(); } catch (e) { beat("save on hiding failed: " + e); } }
+  }
+  document.addEventListener("visibilitychange", function () { if (document.visibilityState === "hidden") trHidden(); });
+  window.addEventListener("pagehide", trHidden);
+  var standalone = navigator.standalone === true ||
+    (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
+  if (standalone && navigator.storage && navigator.storage.persist) {
+    navigator.storage.persist().then(function (granted) { beat("storage persisted: " + granted); }).catch(function () {});
+  }
+  window.addEventListener("pageshow", function (e) { if (e.persisted) { flight.clean = false; beat("page back"); } });
+  function crashText(c) {
+    if (!c) return "";
+    var start = new Date(c.started), end = new Date(c.last || c.started);
+    var mins = ((end - start) / 60000).toFixed(1);
+    return ["== the last session ended unexpectedly (the page was killed, or the app closed it)",
+      "build " + c.build + ", started " + c.started + ", last note " + c.last + " (" + mins + " min in)",
+      "user agent: " + c.ua,
+      "-- its last notes, every 5 s:"].concat(c.beats || []).concat(["-- its last log lines:"]).concat(c.log || []).join("\n");
+  }
+  window.__trCrash = function () { return crashText(crash); };
+  window.__trMemory = memLine;
+
+  // THE WATCHDOG (docs/plans/181; dispatch row 103, "A crash is never a
+  // spinner"): the engine's abort, an out-of-memory, or the heartbeat silent
+  // for thirty seconds on a visible page (the download's progress while
+  // loading, the game's frame tick while playing: TrHeartbeat) puts the card
+  // over the spinner and the bar now, with what is known, Reload and Copy
+  // report on it. Its state is page/watchdog.js; its rules and words,
+  // src/delivery/watchdog.json.
+  var DOG_RULES = {"_what": "THE PAGE'S WATCHDOG (docs/plans/181; dispatch row 103, 'A crash is never a spinner'): what replaces the spinner and the bar with the crash card, and the card's words. page/watchdog.js reads these (tools/pack-web.py puts them in the page); test/suite_delivery.gd plays its states against them. A stall is the heartbeat silent for `stall_s` on a visible page: the download's progress while loading, the game's frame tick (src/delivery/walk_post.gd, TrHeartbeat) while playing. A page that was itself frozen (the watchdog's own check late by `frozen_s`) is not a stall: the clock starts again. THE DEVICE'S CARD (docs/plans/211; dispatch row 129): `need_mb` is what the walk needs of the device: the engine's static peak up the trail is 331 MB at every quality level (tools/bench.sh, docs/plans/211's table), with room; the quality ladder trades drawing, not memory, so there is one need until a profile holds less; page/memprobe.js grows a probe toward it in `probe_step_mb` steps before the engine is fetched, and `words.device` says what it needs and what the device gave.", "stall_s": 30, "check_s": 2, "frozen_s": 6, "tick_s": 1, "oom": "out of memory|cannot enlarge memory|array buffer allocation failed|\\boom\\b", "words": {"oom": "The game stopped. This device may be out of memory.", "abort": "The game stopped unexpectedly.", "frame-stall": "The game stopped. This device may be out of memory.", "load-stall": "The download stalled; check the connection.", "device": "This device could not give the game the memory it needs. The walk needs about {need} MB; {gave}. Our apologies. It plays in a desktop browser or on a recent phone. Copy the report and send it to us.", "device_gave": "this device gave {gave} MB", "device_silent": "this device would not say how much it can give"}, "reload": "Reload", "copy": "Copy report", "need_mb": 384, "probe_step_mb": 64};
+  // THE PAGE'S WATCHDOG (docs/plans/181; dispatch row 103, "A crash is never a
+// spinner"): a crash, an abort or a heartbeat gone silent replaces the spinner
+// and the bar with the crash card, at once, not on the next load. This is the
+// watchdog's state alone -- no page, no clock of its own -- so the suite can
+// play it (test/suite_delivery.gd, under node); page/shell.html wires it to the
+// page and tools/pack-web.py puts it there with its rules
+// (src/delivery/watchdog.json).
+//
+//   tick(kind, t)          the heartbeat: "load" while the download comes,
+//                          "start" when the engine is up, "frame" once the
+//                          game draws (TrHeartbeat)
+//   event(kind, text, t)   "abort" (the engine's), "error" or "rejection" (the
+//                          page's): fatal when it is the engine's own or out of
+//                          memory; any other error is noted, not fired on
+//   check(t, visible)      every few seconds: the card's cause when the
+//                          heartbeat has been silent too long, else null
+//   stop()                 the page said its own failure; nothing more fires
+//
+// Each returns the firing ({cause, words, phase, idle_s, error}) the one time
+// it fires, else null.
+function TrWatchdog(rules, now) {
+  var oom = new RegExp(rules.oom, "i");
+  var w = { phase: "loading", last: now, checked: now, fired: null, stopped: false, error: "" };
+  function fire(cause, t) {
+    if (w.fired || w.stopped) return null;
+    w.fired = { cause: cause, words: rules.words[cause], phase: w.phase,
+      idle_s: Math.round((t - w.last) / 1000), error: w.error };
+    return w.fired;
+  }
+  w.tick = function (kind, t) {
+    // "start": the engine is up and building the valley; no more download.
+    if (kind === "frame" || kind === "start") w.phase = "playing";
+    w.last = t;
+  };
+  w.event = function (kind, text, t) {
+    text = String(text || "");
+    if (oom.test(text)) return fire("oom", t);
+    if (kind === "abort" || /^Aborted\(/.test(text) || /RuntimeError/.test(text)) return fire("abort", t);
+    // An error the engine did not raise (an extension's, a late callback's)
+    // does not stop the walk: kept for the report, and a stall says the rest.
+    w.error = text.slice(0, 200);
+    return null;
+  };
+  w.check = function (t, visible) {
+    var gap = t - w.checked;
+    w.checked = t;
+    if (w.fired || w.stopped) return null;
+    // A hidden page draws nothing, and a frozen page (its own timer late) was
+    // busy, not stopped: the clock starts again.
+    if (!visible || gap > rules.frozen_s * 1000) { w.last = t; return null; }
+    if (t - w.last >= rules.stall_s * 1000) return fire(w.phase === "loading" ? "load-stall" : "frame-stall", t);
+    return null;
+  };
+  w.stop = function () { w.stopped = true; };
+  return w;
+}
+if (typeof module !== "undefined") module.exports = TrWatchdog;
+
+  var DOG = TrWatchdog(DOG_RULES, Date.now());
+  window.__trDogRules = DOG_RULES;
+  var fired = null;
+  function dogEvent(kind, text) { if (DOG) caught(DOG.event(kind, text, Date.now())); }
+  window.__trTick = function (kind) { DOG.tick(kind, Date.now()); };
+  window.__trDogStop = function () { DOG.stop(); };
+  setInterval(function () { caught(DOG.check(Date.now(), document.visibilityState === "visible")); }, DOG_RULES.check_s * 1000);
+  function mb0(b) { return Math.round(b / 1048576); }
+  // What was binding when it stopped, in the page's own words and numbers --
+  // never the error's text, which can carry anything.
+  function binding(f) {
+    if (f.cause === "load-stall") {
+      var st = document.getElementById("stat");
+      return "download: " + ((st && st.textContent) || "not started").replace(/[^a-z0-9 .,:/()%-]/gi, "").slice(0, 100);
+    }
+    var b = "wasm heap " + (MEM.wasm ? mb0(MEM.wasm.buffer.byteLength) + " MB" : "unknown") +
+      ", device " + (navigator.deviceMemory || "?") + " GB";
+    return (f.cause === "frame-stall" ? "no frame for " + f.idle_s + " s, " : "") + b;
+  }
+  // THE DEVICE'S CARD (docs/plans/211; row 129): the device could not give
+  // the game its memory -- what it needs, what it gave or that it would not
+  // say, the other ways to play -- over the spinner and the bar, with one
+  // button: the report. No reload: the same device would only fail again.
+  window.__trDeviceCard = function (words, probe) {
+    if (fired) return;
+    fired = { cause: "device" };
+    DOG.stop();
+    var busy = document.getElementById("busy");
+    if (busy) busy.className = "gone";
+    document.getElementById("boot").hidden = true;
+    document.getElementById("crash-text").textContent = words;
+    var copyB = document.getElementById("crash-copy"), closeB = document.getElementById("crash-close");
+    var copyN = copyB.cloneNode(false);
+    copyN.textContent = DOG_RULES.copy;
+    copyB.replaceWith(copyN);
+    closeB.hidden = true;
+    copyN.addEventListener("click", function () {
+      var p = probe || {};
+      var text = ["== this device could not give the game the memory it needs (the page's measure)",
+        "needs about " + p.need_mb + " MB; " + (p.gave_mb == null ? "the device would not say what it can give" : "the device gave " + p.gave_mb + " MB"),
+        "the threaded runtime's shared memory: " + (p.threads ? "granted" : "refused or not offered"),
+        p.forced ? "shown on purpose (?dev&oom=1)" : "",
+        "memory now: " + memLine(), "cores: " + (navigator.hardwareConcurrency || "?") + ", device memory: " + (navigator.deviceMemory ? navigator.deviceMemory + " GB" : "not told"),
+        "build: " + (document.getElementById("stamp").textContent || "?"), "user agent: " + navigator.userAgent,
+        "-- the last log lines:"].concat(LOG.slice(-40)).filter(function (l) { return l !== ""; }).join("\n");
+      copyText(text, document.getElementById("crash-text"), document.getElementById("report-text"));
+    });
+    document.getElementById("crash").hidden = false;
+    copyN.focus();
+  };
+  function caught(f) {
+    if (!f || fired) return;
+    // OUT OF MEMORY WHILE LOADING (row 129): a threaded start tries once more
+    // single-threaded; a single-threaded one is the device's card, with the
+    // heap the engine reached as what the device gave.
+    if (f.cause === "oom" && f.phase === "loading") {
+      var single = false;
+      try { single = sessionStorage.getItem("tr-single") === "1"; } catch (e) { single = true; }
+      if (window.__trRuntime === "threaded" && !single) {
+        try { sessionStorage.setItem("tr-single", "1"); } catch (e) {}
+        fired = f;
+        beat("watchdog: out of memory threaded; once more single-threaded");
+        location.reload();
+        return;
+      }
+      // ONE MEMORY STEP LOWER, BY ITSELF (docs/plans/239, D-device-2): the
+      // page again at smaller settings; the device's card only at the lowest.
+      if (window.__trStepDown && window.__trStepDown("out of memory while loading")) {
+        fired = f;
+        beat("watchdog: out of memory while loading; one memory step lower");
+        return;
+      }
+      high();
+      var gave = MEM.wasmHigh > 0 ? Math.round(MEM.wasmHigh / 1048576) : null;
+      var probe = { need_mb: DOG_RULES.need_mb, gave_mb: gave, threads: window.__trRuntime === "threaded" };
+      window.__trDeviceCard(DOG_RULES.words.device.replace("{need}", DOG_RULES.need_mb)
+        .replace("{gave}", gave == null ? DOG_RULES.words.device_silent : DOG_RULES.words.device_gave.replace("{gave}", gave)), probe);
+      return;
+    }
+    fired = f;
+    high();
+    var rec = { cause: f.cause, phase: f.phase, idle_s: f.idle_s, binding: binding(f),
+      heap_high_mb: mb0(MEM.wasmHigh), js_heap_high_mb: mb0(MEM.jsHigh) };
+    beat("watchdog: " + f.cause + " -- " + rec.binding);
+    var sent = window.__trWalkCrash ? window.__trWalkCrash(rec) : false;
+    var busy = document.getElementById("busy");
+    if (busy) busy.className = "gone";
+    document.getElementById("boot").hidden = true;
+    var box = document.getElementById("crash");
+    document.getElementById("crash-text").textContent = f.words;
+    // Fresh buttons: the last load's card had its own.
+    var copyB = document.getElementById("crash-copy"), closeB = document.getElementById("crash-close");
+    var copyN = copyB.cloneNode(false), reloadN = closeB.cloneNode(false);
+    copyN.textContent = DOG_RULES.copy;
+    reloadN.textContent = DOG_RULES.reload;
+    reloadN.className = "";
+    reloadN.removeAttribute("aria-label");
+    copyN.className = "quiet";
+    copyB.replaceWith(copyN);
+    closeB.replaceWith(reloadN);
+    reloadN.addEventListener("click", function () { location.reload(); });
+    // On the next build, the way back, here too: a build that stopped may
+    // never reach its own settings (docs/plans/186; TrChannel.BACK).
+    var had = document.getElementById("crash-back");
+    if (had) had.remove();
+    if (window.__trChannel && window.__trChannel.current === "candidate") {
+      var back = document.createElement("button");
+      back.id = "crash-back";
+      back.type = "button";
+      back.className = "quiet";
+      back.textContent = "Back to the release";
+      back.addEventListener("click", function () { window.__trChannelTo("release"); });
+      box.appendChild(back);
+    }
+    copyN.addEventListener("click", function () {
+      var text = ["== the game stopped (the page's watchdog): " + f.cause + ", while " + f.phase + ", " + f.idle_s + " s since the heartbeat",
+        "binding: " + rec.binding, "memory high-water: wasm heap " + rec.heap_high_mb + " MB, js heap " + rec.js_heap_high_mb + " MB",
+        "memory now: " + memLine(), f.error ? "last page error: " + f.error : "no page error before it",
+        "sent with the walk's record: " + (sent ? "yes" : "no (diagnostics off, over the day's budget, or no walk yet)"),
+        "build: " + (document.getElementById("stamp").textContent || "?"), "user agent: " + navigator.userAgent,
+        "-- the last notes, every 5 s:"].concat(flight.beats).concat(["-- the last log lines:"]).concat(LOG.slice(-40)).join("\n");
+      copyText(text, document.getElementById("crash-text"), document.getElementById("report-text"));
+    });
+    box.hidden = false;
+    reloadN.focus();
+  }
+
+  // THE REPORT. The game's Diagnostics button calls this with its own state;
+  // the browser's is added here, and the Copy button copies the lot.
+  function webgl() {
+    try {
+      var gl = document.createElement("canvas").getContext("webgl2");
+      var info = gl.getExtension("WEBGL_debug_renderer_info");
+      return info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) + " / " + gl.getParameter(info.UNMASKED_VENDOR_WEBGL)
+        : gl.getParameter(gl.RENDERER);
+    } catch (e) { return "unavailable"; }
+  }
+  var lastGame = "";
+  window.__transectDiag = function (game) {
+    lastGame = game;
+    var lines = [];
+    lines.push("== transect diagnostics, " + new Date().toISOString());
+    lines.push(String(game || "(no game report)"));
+    lines.push("");
+    lines.push("== browser");
+    lines.push("build: " + (document.getElementById("stamp").textContent || "?"));
+    lines.push("user agent: " + navigator.userAgent);
+    lines.push("screen: " + screen.width + "x" + screen.height + " css, dpr " + window.devicePixelRatio +
+      ", viewport " + window.innerWidth + "x" + window.innerHeight);
+    lines.push("cores: " + (navigator.hardwareConcurrency || "?") + ", memory: " + (navigator.deviceMemory || "?") + " GB");
+    lines.push("webgl: " + webgl());
+    lines.push("page up " + stamp() + ", visible: " + document.visibilityState);
+    lines.push("memory: " + memLine());
+    lines.push("");
+    // ON THE DEVICE (docs/plans/136): each cache the walk keeps or reads.
+    lines.push("== on-device caches");
+    lines.push("build: " + (window.__trBuild || "?") + "  |  commit " + (window.__trCommit || "?"));
+    lines.push("set fetch: " + (window.__trSetState || "none in this build"));
+    var caches = {};
+    try { caches = JSON.parse(window.__trCaches || "{}"); } catch (e) { caches = {}; }
+    lines.push("baked set: " + (caches.set || "not reported by the game"));
+    lines.push("rung store: " + (caches.rungs || "not reported by the game"));
+    lines.push("");
+    // WHAT THIS DEVICE SENT (dispatch row 83): the switch in Settings, and
+    // what left this session -- nothing, unless the player turned it on.
+    lines.push("== diagnostics sent");
+    lines.push("switch (Settings, About): " + (window.__trDiagOn === true ? "on" : window.__trDiagOn === false ? "off" : "not reported yet"));
+    lines.push("sent this session: " + (window.__trSent && window.__trSent.count
+      ? window.__trSent.count + " walk record(s), the last at " + window.__trSent.last : "nothing"));
+    if (!window.__trCollector) lines.push("this build has no server address: nothing can leave");
+    lines.push("");
+    if (crash) { lines.push(crashText(crash)); lines.push(""); }
+    lines.push("== audio");
+    lines.push("contexts: " + AUDIO.contexts.length);
+    AUDIO.contexts.forEach(function (c, i) {
+      lines.push("  [" + i + "] " + c.state + ", " + c.sampleRate + " Hz, base latency " +
+        (c.baseLatency || 0).toFixed(3) + " s, output latency " + (c.outputLatency || 0).toFixed(3) + " s, time " +
+        c.currentTime.toFixed(1) + " s");
+    });
+    lines.push("gestures seen: " + AUDIO.unlocks + ", last resume: " + (AUDIO.lastResume || "none needed"));
+    lines.push("audio session: " + AUDIO.session);
+    lines.push("sounds started by the engine: " + AUDIO.sources);
+    // THE ENGINE'S BUSES AS THE BROWSER HAS THEM: where each sends, its gain
+    // and mute. Runtime-added buses once looped master -> Sound -> Music ->
+    // master here, with no way out to the speakers, and the phone was silent
+    // with every other line of this report saying sound was playing.
+    try {
+      var ga = window.__godotAudio;
+      if (ga && ga.buses) {
+        lines.push("buses: " + ga.buses.map(function (b, i) {
+          var to = b._send ? ga.buses.indexOf(b._send) : "out";
+          return i + " -> " + to + " (gain " + b._gainNode.gain.value.toFixed(2) +
+            (b._muteNode.gain.value === 0 ? ", muted" : "") + ", " + b._sampleNodes.size + " sounds)";
+        }).join("; "));
+      }
+    } catch (e) { lines.push("buses: unreadable (" + e + ")"); }
+    lines.push("media element (silent-switch unlock): " + AUDIO.media);
+    lines.push("tests: " + (AUDIO.tests.length ? AUDIO.tests.join("; ") : "none run"));
+    lines.push("");
+    lines.push("== log (last " + Math.min(LOG.length, 120) + " lines)");
+    lines = lines.concat(LOG.slice(-120));
+    var text = lines.join("\n");
+    document.getElementById("report-text").value = text;
+    document.getElementById("report-note").textContent = "";
+    document.getElementById("report").hidden = false;
+    return true;
+  };
+  function copy() {
+    // Rebuilt first, so the tests run since the report opened are in it; and
+    // the game's own lines refreshed if it can be asked.
+    if (window.transect && window.transect.report) {
+      try { lastGame = window.transect.report(); } catch (e) { /* keep the old */ }
+    }
+    window.__transectDiag(lastGame);
+    var ta = document.getElementById("report-text");
+    var note = document.getElementById("report-note");
+    var done = function () { note.textContent = "Copied. Send it with your note."; };
+    var fallback = function () {
+      ta.focus(); ta.select(); ta.setSelectionRange(0, ta.value.length);
+      var ok = false;
+      try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+      note.textContent = ok ? "Copied. Send it with your note." : "Select the text and copy it by hand.";
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(ta.value).then(done, fallback);
+    } else {
+      fallback();
+    }
+  }
+  // Copies `text`, then says so in `note` (an element) -- the clipboard API
+  // where there is one, the old select-and-copy where not.
+  function copyText(text, note, holder) {
+    var said = function (ok) { note.textContent = ok ? "Copied. Send it with your note." : "Select the text and copy it by hand."; };
+    var fallback = function () {
+      // Shown in the report's box, so there is text to select by hand too.
+      holder.value = text; document.getElementById("report").hidden = false;
+      holder.focus(); holder.select(); holder.setSelectionRange(0, text.length);
+      var ok = false;
+      try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+      said(ok);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(function () { said(true); }, fallback);
+    else fallback();
+  }
+  document.addEventListener("DOMContentLoaded", function () {
+    // A walk that ended unexpectedly last time: say so, over everything, until
+    // dismissed, with its report one tap away.
+    // A load that recovered by itself says so in its toast, not this card.
+    if (crash && !fired && !(window.__trRecovery && window.__trRecovery.recovered)) {
+      var box = document.getElementById("crash");
+      var mins = ((new Date(crash.last || crash.started) - new Date(crash.started)) / 60000).toFixed(1);
+      document.getElementById("crash-text").textContent = "The last walk stopped unexpectedly, " + mins +
+        " minutes in. Copy the report and send it to us.";
+      box.hidden = false;
+      document.getElementById("crash-copy").addEventListener("click", function () {
+        var ta = document.getElementById("report-text");
+        copyText(crashText(crash) + "\n\n== this session\nmemory now: " + memLine() + "\nuser agent: " + navigator.userAgent,
+          document.getElementById("crash-text"), ta);
+      });
+      document.getElementById("crash-close").addEventListener("click", function () {
+        box.hidden = true;
+        store(CRASH_KEY, null);
+        document.getElementById("canvas").focus();
+      });
+    }
+    document.getElementById("report-copy").addEventListener("click", copy);
+    document.getElementById("test-tone").addEventListener("click", function () { window.__trTone("webaudio"); });
+    document.getElementById("test-media").addEventListener("click", function () { window.__trTone("media"); });
+    document.getElementById("test-strike").addEventListener("click", function () {
+      document.getElementById("report").hidden = true;
+      if (window.transect && window.transect.strike) { window.transect.strike(); AUDIO.tests.push("strike requested"); }
+      else AUDIO.tests.push("strike: no game API");
+    });
+    document.getElementById("report-close").addEventListener("click", function () {
+      document.getElementById("report").hidden = true;
+      document.getElementById("canvas").focus();
+    });
+  });
+}());
+</script>
+<script>
+(function () {
+  "use strict";
+  // ONE RUNTIME OF TWO (docs/plans/055): the threaded one when the page is
+  // isolated and the build ships it, else the single-threaded one.
+  var PARTS_MT = ["godot-mt.0.wasm", "godot-mt.1.wasm", "godot-mt.2.wasm", "godot-mt.3.wasm", "godot-mt.4.wasm"];
+  // CAN THIS DEVICE GIVE THE GAME ITS MEMORY? (docs/plans/211; dispatch row
+  // 129): measured before a byte of the engine is fetched -- the threaded
+  // runtime's shared memory first, then the single-threaded runtime's own;
+  // the runtime that can have its memory is the one loaded, and when neither
+  // can, the device's card says so in plain words, with the two numbers.
+  // `?dev&oom=1` shows that card on any device (the review's way to see it).
+  // CAN THIS DEVICE GIVE THE GAME ITS MEMORY? (docs/plans/211; dispatch row 129,
+// the owner 2026-10-04: "the game isn't supported on this device, memory
+// requirements are X of Y ... solve this for the class of problems, not just
+// this instance"). The class is "the runtime cannot get its memory", so it is
+// measured, never guessed from a device's name, before a byte of the engine
+// is fetched:
+//   - the threaded runtime asks for shared memory up to its maximum at once
+//     (godot-mt.js: 32 MB, growable to 2 GB, shared); if the device refuses
+//     that reservation, the single-threaded runtime is tried;
+//   - the single-threaded runtime grows its own memory; a plain memory is
+//     grown here in steps toward what the walk needs (`need_mb`,
+//     src/delivery/watchdog.json: the web bench's working heap with room), and
+//     how far it got is what the device gave;
+//   - only when both fail is the device's card shown.
+// The probes' memory is let go at once (no reference is kept). No page of its
+// own: `W` is WebAssembly, or a suite's stand-in (test/suite_delivery.gd).
+var TR_PAGE_MB = 1 / 16; // one wasm page, 64 KiB
+function trMemoryProbe(W, rules, threadsOffered) {
+  var out = { threads: false, single: false, need_mb: rules.need_mb, gave_mb: null, runtime: "none" };
+  if (threadsOffered) {
+    try {
+      new W.Memory({ initial: 512, maximum: 32768, shared: true });
+      out.threads = true;
+    } catch (e) { out.threads = false; }
+  }
+  var have = 0;
+  try {
+    var m = new W.Memory({ initial: 512, maximum: 32768 });
+    have = 32;
+    var step = rules.probe_step_mb / TR_PAGE_MB;
+    while (have < rules.need_mb) {
+      try { m.grow(step); have += rules.probe_step_mb; } catch (e) { break; }
+    }
+    m = null;
+  } catch (e) { have = 0; }
+  out.gave_mb = have > 0 ? have : null;
+  out.single = have >= rules.need_mb;
+  out.runtime = out.threads ? "threaded" : (out.single ? "single" : "none");
+  return out;
+}
+// The device's card, in the page's own words: what the walk needs and what
+// the device gave, or that it would not say; the other ways to play.
+function trDeviceWords(rules, needMb, gaveMb) {
+  var gave = (gaveMb == null) ? rules.words.device_silent : rules.words.device_gave.replace("{gave}", Math.round(gaveMb));
+  return rules.words.device.replace("{need}", Math.round(needMb)).replace("{gave}", gave);
+}
+// THE DEVICE'S CLASS FOR THE START FLOW (docs/plans/226 step 4; row 184): the
+// budget the game's screens are chosen under (src/delivery/start_flow.json's
+// `budgets`), from what the page knows before the engine is fetched -- the
+// probe's runtime and the view (`view`: {wide, fine}, a canvas of 900 px or
+// more and a fine pointer). A desktop is wide with a mouse; a phone that got
+// the threaded runtime is a phone; one left a single thread is the low phone.
+// The governor's first menu frames may step it down (step 3, the
+// performance seat's).
+function trDeviceClass(probe, view) {
+  if (view && view.wide && view.fine) return "desktop";
+  return (probe && probe.runtime === "threaded") ? "phone" : "phone_low";
+}
+// The class added to the engine's arguments: on every page, a player's too
+// (it names a budget, never a scene), after the "--" that starts the game's own.
+function trDeviceArgs(args, cls) {
+  var out = (args || []).slice();
+  if (out.indexOf("--") < 0) out.unshift("--");
+  out.push("--device-class=" + cls);
+  return out;
+}
+if (typeof module !== "undefined") module.exports = { trMemoryProbe: trMemoryProbe, trDeviceWords: trDeviceWords,
+  trDeviceClass: trDeviceClass, trDeviceArgs: trDeviceArgs };
+
+  // A LOAD THE DEVICE CANNOT HOLD RECOVERS ON ITS OWN (docs/plans/239,
+  // D-device-2): the last load's breadcrumb, read before this load writes its
+  // own; one that never reached a resting point died there, and this load is
+  // one memory step lower, by itself.
+  // A LOAD THE DEVICE CANNOT HOLD RECOVERS ON ITS OWN (docs/plans/239; the
+// owner's D-device-2, 2026-10-11: "we tried to give you the full quality game.
+// The device couldn't handle it. We're gonna drop your settings so it uses
+// less memory ... that should be done automatically"). A tab killed for memory
+// runs no code, so the load writes a breadcrumb before each costly step; the
+// next visit reads it, and a load that never reached a resting point died in
+// that step: the memory step goes one lower, by itself. No page of its own,
+// so the suite plays it (test/suite_delivery.gd, under node); page/shell.html
+// stores the crumbs and the step, and tools/pack-web.py puts this in the page.
+//
+//   trRecover(crumb, step)   the decision for this visit, from the last
+//                            load's breadcrumb and the step it ran at:
+//                            {step, recovered, died_in, device_card}
+//   trRecoverWords(r)        the toast's words, "" when nothing happened
+var TR_RECOVER = {
+  KEY_CRUMB: "transect.crumb", KEY_STEP: "transect.memory_step",
+  // The memory steps the game has (src/delivery/profile.gd): 0 is the full
+  // game, LOWEST the least it can hold and still be the walk.
+  LOWEST: 2,
+  // THE COSTLY STEPS (the owner's amendment to D-device-2: "We can't auto
+  // recover every exception ... otherwise we'll have an infinite loop of
+  // madness"): a load that never finished one of these is the only crumb
+  // that lowers the step. Any other -- the download, the engine starting, a
+  // resting point (the menu "ready", the walk "done"), the page's own
+  // "stepped down" -- lowers nothing.
+  COSTLY: ["prepare", "vocabulary", "menu_impostors", "impostors", "ground"]
+};
+// HOW THE ERRORS ARE TOLD APART (docs/plans/239):
+//   - a crumb left in a costly step, by a page that was not closed (no
+//     `closed`: the browser killed it, the way a tab dies for memory): one
+//     step lower;
+//   - a crumb the page marked `closed` on leaving (the player closed or left
+//     it mid-load): nothing;
+//   - any other crumb: nothing.
+// The watchdog's caught errors are told apart in page/shell.html: only its
+// "oom" cause while loading steps down (window.__trStepDown); an abort, a
+// stall or any other error is reported on its card and never reloads.
+// NO LOOP: each failure lowers one step at most; the page reloads itself only
+// to step down (at most LOWEST times); at the lowest step a further failure is
+// the device's card, and the engine is not started again (D-device-1).
+function trRecover(crumb, step) {
+  var s = Math.max(0, Math.min(TR_RECOVER.LOWEST, parseInt(step, 10) || 0));
+  if (!crumb || crumb.closed || TR_RECOVER.COSTLY.indexOf(crumb.step) < 0) {
+    return { step: s, recovered: false, died_in: "", device_card: false };
+  }
+  // The last load died in `crumb.step`. At the lowest step there is nothing
+  // smaller to try: the device's card (D-device-1).
+  if (s >= TR_RECOVER.LOWEST) return { step: s, recovered: false, died_in: crumb.step, device_card: true };
+  return { step: s + 1, recovered: true, died_in: crumb.step, device_card: false };
+}
+function trRecoverWords(r) {
+  if (!r || !r.recovered) return "";
+  return "The game ran out of memory last time. It now loads smaller settings.";
+}
+if (typeof module !== "undefined") module.exports = { TR_RECOVER: TR_RECOVER, trRecover: trRecover, trRecoverWords: trRecoverWords };
+
+  (function () {
+    var crumb = null, step = 0;
+    try { crumb = JSON.parse(localStorage.getItem(TR_RECOVER.KEY_CRUMB) || "null"); } catch (e) { crumb = null; }
+    try { step = parseInt(localStorage.getItem(TR_RECOVER.KEY_STEP) || "0", 10) || 0; } catch (e) { step = 0; }
+    var r = trRecover(crumb, step);
+    window.__trRecovery = r;
+    try { localStorage.setItem(TR_RECOVER.KEY_STEP, String(r.step)); } catch (e) {}
+    // The game's breadcrumbs (TrLoadCrumb), stored at once: a kill a moment
+    // later still leaves the step it was in.
+    window.__trCrumb = function (what) {
+      try { localStorage.setItem(TR_RECOVER.KEY_CRUMB, JSON.stringify({ step: String(what), memory_step: r.step, at: Date.now() })); } catch (e) {}
+    };
+    window.__trCrumb("download");
+    // A page the player closes or leaves mid-load did not die for memory: its
+    // crumb is marked closed, and the next visit lowers nothing for it.
+    window.addEventListener("pagehide", function () {
+      try {
+        var c = JSON.parse(localStorage.getItem(TR_RECOVER.KEY_CRUMB) || "null");
+        if (c) { c.closed = true; localStorage.setItem(TR_RECOVER.KEY_CRUMB, JSON.stringify(c)); }
+      } catch (e) {}
+    });
+    // One step lower now, and the page again: a caught out-of-memory while
+    // loading (the watchdog's). False at the lowest step: the device's card.
+    window.__trStepDown = function (why) {
+      // A caught out-of-memory counts as a death in a costly step.
+      var d = trRecover({ step: "vocabulary" }, r.step);
+      if (d.device_card) return false;
+      try {
+        localStorage.setItem(TR_RECOVER.KEY_STEP, String(d.step));
+        localStorage.setItem(TR_RECOVER.KEY_CRUMB, JSON.stringify({ step: "stepped down", memory_step: d.step, at: Date.now() }));
+        sessionStorage.setItem("tr-recovered", why || "out of memory");
+      } catch (e) { return false; }
+      location.reload();
+      return true;
+    };
+    // A reload the watchdog made after a caught out-of-memory says so too.
+    try {
+      var caughtWhy = sessionStorage.getItem("tr-recovered");
+      if (caughtWhy) { sessionStorage.removeItem("tr-recovered"); r.recovered = true; r.died_in = caughtWhy; }
+    } catch (e) {}
+  })();
+  var MEM_RULES = window.__trDogRules;
+  var singleAfterOom = false;
+  try { singleAfterOom = sessionStorage.getItem("tr-single") === "1"; } catch (e) { singleAfterOom = false; }
+  var offered = !!PARTS_MT && self.crossOriginIsolated === true && !singleAfterOom;
+  var PROBE = (typeof DEV !== "undefined" && DEV && /[?&]oom=1(&|$)/.test(location.search))
+    ? { threads: false, single: false, need_mb: MEM_RULES.need_mb, gave_mb: null, runtime: "none", forced: true }
+    : (typeof WebAssembly === "object" ? trMemoryProbe(WebAssembly, MEM_RULES, offered) : null);
+  window.__trProbe = PROBE;
+  var MT = !!PROBE && PROBE.runtime === "threaded";
+  var EXE = MT ? "godot-mt" : "godot";
+  var PARTS = MT ? PARTS_MT : ["godot.0.wasm", "godot.1.wasm", "godot.2.wasm", "godot.3.wasm", "godot.4.wasm"];
+  var WASM_BYTES = MT ? 38820072 : 39514754;
+  window.__trRuntime = MT ? "threaded" : "single-threaded";
+  var PCK = "transect-f7a26046600b.pck";
+  var PCK_BYTES = 14202948;
+  // The valley's pack, in parts when it is over a chunk (tools/pack-web.py).
+  var PCK_PARTS = ["transect-f7a26046600b.0.pck", "transect-f7a26046600b.1.pck"];
+  // THE BAKED REVIEW SET'S PACK (docs/plans/108 step 4), when the build has
+  // one: preloaded into the engine's files, and mounted by the game
+  // (src/delivery/packs.gd) before the valley asks for a rung.
+  var SET_PCK = "";
+  var SET_BYTES = 0;
+  var SET_PATH = "/tmp/transect-set.pck";
+  // WHAT A FAILED FETCH SAYS (docs/plans/136). Each names the file and its
+  // HTTP status. A part that is gone (404) means a newer build replaced this
+  // one: on the home screen the app must be closed and opened again, since a
+  // standalone app keeps its old page; in a tab a reload is enough.
+  var WORDS = {
+    setMissing: "set not fetched, building live",
+    newBuildApp: "A new build of the walk is out. Close the app completely (swipe it away) and open it again.",
+    newBuildTab: "A new build of the walk is out. Reload the page to get it."
+  };
+  function standalone() {
+    try { return window.navigator.standalone === true || matchMedia("(display-mode: standalone)").matches; } catch (e) { return false; }
+  }
+  // A part, IN BYTES AS THEY ARRIVE (docs/plans/177): `onBytes(n)` is told
+  // each chunk read off the stream, so one large part moves the bar as it
+  // streams instead of holding it still until the whole has come.
+  function getPart(part, onBytes) {
+    return realFetch(part).then(function (r) {
+      if (!r.ok) {
+        var e = new Error(part + " returned HTTP " + r.status);
+        e.status = r.status;
+        e.part = part;
+        throw e;
+      }
+      // The set's bytes are counted too, under its own words (docs/plans/177).
+      if (!onBytes && part === SET_PCK && window.__trSetBytes) onBytes = window.__trSetBytes;
+      return onBytes ? readAll(r, onBytes) : readAll(r);
+    });
+  }
+  // A part read as it streams, each piece a heartbeat for the watchdog
+  // (docs/plans/181): a 15 MB part on a slow line takes longer than its stall.
+  function tick() { if (window.__trTick) window.__trTick("load"); }
+  // ... and each piece's bytes told to `onBytes`, the bar's (docs/plans/177).
+  function readAll(r, onBytes) {
+    if (!r.body || !r.body.getReader) return r.arrayBuffer();
+    var reader = r.body.getReader(), pieces = [], n = 0;
+    function pump() {
+      return reader.read().then(function (x) {
+        if (x.done) {
+          var b = new Uint8Array(n), at = 0;
+          pieces.forEach(function (p) { b.set(p, at); at += p.length; });
+          return b.buffer;
+        }
+        pieces.push(x.value);
+        n += x.value.length;
+        tick();
+        if (onBytes) onBytes(x.value.length);
+        return pump();
+      });
+    }
+    return pump();
+  }
+  // A fetch that failed, in words: the file, the status, and when it is a
+  // part gone, that a new build is out.
+  function fetchWords(err) {
+    var msg = String((err && err.message) || err);
+    if (err && err.status === 404) msg += "\n\n" + (standalone() ? WORDS.newBuildApp : WORDS.newBuildTab);
+    return msg;
+  }
+  window.__trFetchWords = fetchWords;
+  var BUILD = "transect 0.1.7 6706ab863b  |  lib 7dafbb2";
+  // The game keys the plants it keeps on the device by this (TrRungStore).
+  window.__trBuild = BUILD;
+  // THE COMMIT BUILT (tools/pack-web.py, docs/plans/111): apart from BUILD,
+  // so a build of the same code keeps the plants the device already has.
+  window.__trCommit = "detached 20e1db4+";
+
+  var bar = document.getElementById("bar");
+  var stat = document.getElementById("stat");
+  var diag = document.getElementById("diag");
+  document.getElementById("stamp").textContent = BUILD + "  |  " + window.__trCommit + (MT ? "  |  threads" : "");
+
+  function setBar(f) {
+    bar.style.width = (Math.max(0, Math.min(1, f)) * 100).toFixed(1) + "%";
+    if (window.__trSplash) window.__trSplash.progress(f);
+  }
+  // THE BAR IS BYTES, THE LINE ITS CONSTRAINT (docs/plans/177, the owner:
+  // "why is it taking so long? because we need to download one gigabyte and
+  // we're at this much"): the engine's, the valley's and its set's bytes,
+  // counted as they stream, and the line says which download binds now.
+  // AND HOW FAST, AND HOW MUCH IS LEFT (docs/plans/203; dispatch row 120,
+  // D-ui-1): the bytes of every download together, their rate over the last
+  // second, said every second -- "downloading the valley, 18.3 of 54.6 MB,
+  // 3.1 MB/s" -- and when nothing has come for five seconds, that, instead
+  // of a line lying still. The rate is page/rate.js.
+  // THE RATE OF A WAIT (docs/plans/203; dispatch row 120, D-ui-1, the owner
+// 2026-10-04 11:00: "measure a derivative of the constraint ... we need X
+// things per second, and we're waiting on Y total"). A count of done things
+// fed as it grows; asked each second, it says how fast it is going now and
+// how much is left, in the wait's own unit. No page and no clock of its own,
+// so the suite plays it (test/suite_delivery.gd, under node); page/shell.html
+// feeds it the bytes and tools/pack-web.py puts it in the page.
+//
+//   TrRate(total, t)   a wait for `total` things, begun at `t` (ms)
+//   .add(n, t)         `n` more done at `t`
+//   .now(t)            {done, total, left, rate (a second, over the last
+//                      second only, never the whole wait's average), still_s
+//                      (seconds since the count last moved), stalled (still
+//                      for STALL_S), eta_s (left / rate, only once the rate
+//                      has held HELD_S without a gap of a second; else -1)}
+//   trRateWords(s, u)  the line's numbers in unit `u` ({name, per, digits}):
+//                      "18.3 of 54.6 MB, 3.1 MB/s, about 12 s left", or
+//                      "18.3 of 54.6 MB, nothing for 7 s" when stalled
+var TR_RATE = { WINDOW_MS: 1000, STALL_S: 5, HELD_S: 3 };
+function TrRate(total, t) {
+  var r = { total: total, done: 0, samples: [[t, 0]], moved: t, held: t };
+  function doneAt(when) {
+    // The count as it stood at `when`: the last sample at or before it.
+    var d = 0;
+    for (var i = 0; i < r.samples.length && r.samples[i][0] <= when; i++) d = r.samples[i][1];
+    return d;
+  }
+  r.add = function (n, at) {
+    // A gap of more than a second without a thing breaks the rate's hold.
+    if (at - r.moved > TR_RATE.WINDOW_MS) r.held = at;
+    r.done = Math.min(r.total, r.done + n);
+    r.moved = at;
+    r.samples.push([at, r.done]);
+    // Kept a little past the window: the rate needs the count a second ago.
+    while (r.samples.length > 2 && r.samples[1][0] < at - TR_RATE.WINDOW_MS * 2) r.samples.shift();
+  };
+  r.now = function (at) {
+    var rate = (r.done - doneAt(at - TR_RATE.WINDOW_MS)) * 1000 / TR_RATE.WINDOW_MS;
+    var still = Math.max(0, (at - r.moved) / 1000);
+    var gap = at - r.moved > TR_RATE.WINDOW_MS;
+    var held = !gap && rate > 0 && (at - r.held) >= TR_RATE.HELD_S * 1000;
+    var left = r.total - r.done;
+    return { done: r.done, total: r.total, left: left, rate: rate, still_s: Math.floor(still),
+      stalled: left > 0 && still >= TR_RATE.STALL_S, eta_s: held ? Math.ceil(left / rate) : -1 };
+  };
+  return r;
+}
+function trRateWords(s, u) {
+  function n(x) { return (x / u.per).toFixed(u.digits); }
+  var words = n(s.done) + " of " + n(s.total) + " " + u.name;
+  if (s.left <= 0) return words;
+  if (s.stalled) return words + ", nothing for " + s.still_s + " s";
+  words += ", " + n(s.rate) + " " + u.name + "/s";
+  if (s.eta_s >= 0) words += ", about " + (s.eta_s >= 90 ? Math.round(s.eta_s / 60) + " min" : s.eta_s + " s") + " left";
+  return words;
+}
+if (typeof module !== "undefined") module.exports = { TrRate: TrRate, trRateWords: trRateWords, TR_RATE: TR_RATE };
+
+  var got = { wasm: 0, pck: 0, set: 0 };
+  var RATE = TrRate(WASM_BYTES + PCK_BYTES + (SET_PCK ? SET_BYTES : 0), Date.now());
+  var MB_UNIT = { name: "MB", per: 1048576, digits: 1 };
+  // What binds now; "" when the line is not the downloads' to say.
+  var binding = "";
+  function sayRate() {
+    if (!binding) return;
+    var s = RATE.now(Date.now());
+    if (s.left <= 0) { binding = ""; return; }
+    stat.textContent = binding + ", " + trRateWords(s, MB_UNIT);
+  }
+  var rateClock = setInterval(sayRate, 1000);
+  function rateDone() { binding = ""; clearInterval(rateClock); }
+  window.__trSetBytes = moved("set", "downloading the valley's set", SET_BYTES);
+  function moved(which, words, of) {
+    return function (n) {
+      got[which] += n;
+      RATE.add(n, Date.now());
+      setBar((got.wasm + got.pck + got.set) / Math.max(1, RATE.total));
+      binding = words;
+      sayRate();
+    };
+  }
+  function mb(b) { return (b / 1048576).toFixed(1) + " MB"; }
+  function fail(title, detail) {
+    // The page says this failure itself: the watchdog's card would only cover it.
+    if (window.__trDogStop) window.__trDogStop();
+    rateDone();
+    stat.textContent = "";
+    diag.hidden = false;
+    diag.innerHTML = "<b>" + title + "</b>\n\n" + detail + "\n\nbuild  " + BUILD;
+  }
+
+  var gl = false;
+  try { gl = !!document.createElement("canvas").getContext("webgl2"); } catch (e) { gl = false; }
+  if (typeof WebAssembly !== "object" || !gl) {
+    fail("This browser cannot run the walk.",
+      "It needs WebAssembly and WebGL 2. On iOS, WebGL 2 needs iOS 15 or later, " +
+      "and can be off in Low Power Mode or a private window.");
+    return;
+  }
+  // THE LOWEST SETTINGS DIED TOO (docs/plans/239, D-device-1): the device's
+  // card, and the engine is not started again -- no reload, no loop.
+  if (window.__trRecovery && window.__trRecovery.device_card) {
+    window.__trIsolating = true;
+    window.__trDeviceCard(trDeviceWords(MEM_RULES, MEM_RULES.need_mb, null), PROBE || {});
+    return;
+  }
+  if (PROBE && PROBE.runtime === "none") {
+    // Nothing is fetched: the engine could not have its memory here.
+    window.__trIsolating = true;
+    window.__trDeviceCard(trDeviceWords(MEM_RULES, PROBE.need_mb, PROBE.gave_mb), PROBE);
+    return;
+  }
+
+  // THE RUNTIME ARRIVES IN PIECES: the host caps one file at 15 MB and Godot's
+  // runtime is 36 MB, so the packer splits it and this reassembles it.
+  var wasmPromise = null;
+  function getWasm() {
+    if (wasmPromise) return wasmPromise;
+    wasmPromise = (function () {
+      var buf = new Uint8Array(WASM_BYTES), at = 0, i = 0;
+      function next() {
+        if (i >= PARTS.length) {
+          if (at !== WASM_BYTES) throw new Error("runtime reassembled to " + at + " B, expected " + WASM_BYTES);
+          return buf;
+        }
+        var part = PARTS[i++];
+        return getPart(part, moved("wasm", "downloading the engine", WASM_BYTES)).then(function (ab) {
+          buf.set(new Uint8Array(ab), at);
+          at += ab.byteLength;
+          return next();
+        });
+      }
+      return Promise.resolve().then(next);
+    })();
+    return wasmPromise;
+  }
+  // THE VALLEY'S PACK IN PARTS (docs/plans/108 M4): fetched in turn and
+  // handed to the engine under its one name. Its progress is the engine's.
+  var pckPromise = null;
+  function getPck() {
+    if (pckPromise) return pckPromise;
+    var onPck = moved("pck", "downloading the valley", PCK_BYTES);
+    pckPromise = Promise.all(PCK_PARTS.map(function (p) { return getPart(p, onPck); })).then(function (abs) {
+      var buf = new Uint8Array(PCK_BYTES), at = 0;
+      abs.forEach(function (ab) { buf.set(new Uint8Array(ab), at); at += ab.byteLength; });
+      if (at !== PCK_BYTES) throw new Error("the valley reassembled to " + at + " B, expected " + PCK_BYTES);
+      return buf;
+    });
+    return pckPromise;
+  }
+  var realFetch = window.fetch.bind(window);
+  window.fetch = function (input, init) {
+    var url = (typeof input === "string") ? input : (input && input.url) || "";
+    if (/godot(-mt)?\.wasm(\?|$)/.test(url)) {
+      return getWasm().then(function (b) {
+        return new Response(b.slice().buffer, { status: 200, headers: { "Content-Type": "application/wasm" } });
+      });
+    }
+    if (url.split("?")[0].split("/").pop() === PCK) {
+      return getPck().then(function (b) {
+        return new Response(b.buffer, { status: 200, headers: { "Content-Type": "application/octet-stream", "Content-Length": String(PCK_BYTES) } });
+      });
+    }
+    return realFetch(input, init);
+  };
+
+  window.__bootTransect = function () {
+    if (typeof Engine !== "function") {
+      fail("The engine loader did not load.", "godot.js was blocked or failed to parse.");
+      return;
+    }
+    // SCENES BY URL: ?storm=1&hour=23 and the like become the game's own
+    // review arguments (src/main.gd), so a link can open a given scene.
+    // ... and `?dev`, the developer's mode for this run (page/args.js).
+    // THE ENGINE'S ARGUMENTS FROM THE ADDRESS (docs/plans/210; dispatch row 125,
+// the owner 2026-10-04 16:45: "yeah, let's add it, for small infra tooling
+// like this"). In a dev page (`DEV`: a dev build, or `?dev`), the scene keys
+// become the game's review arguments (src/main.gd), as before; and `?dev` in
+// the address also gives a build for players its dev mode (`--mode=dev`, the
+// free walk) and turns the game's developer mode on for this run
+// (`--developer=on`, TrRamp.review, never saved), so the start card offers
+// the places without the stamp's seven taps -- on an iPad with no console.
+// A page without `DEV` passes nothing, as ever (plan 025). No page of its
+// own, so the suite plays it (test/suite_delivery.gd, under node).
+var TR_SCENE_KEYS = ["hour", "day", "clouds", "mist", "rain", "storm", "strike", "heading", "pitch", "zoom", "north", "east",
+  "quality", "bench", "power", "aurora", "shelter", "torch", "beds", "wind"];
+function trEngineArgs(dev, search) {
+  var args = [];
+  if (!dev) return args;
+  var q = new URLSearchParams(search || "");
+  TR_SCENE_KEYS.forEach(function (k) {
+    if (q.has(k)) args.push("--" + k + "=" + q.get(k));
+  });
+  // The dev mode (TrProduct reads --mode= from its arguments, where it is
+  // certain at start; its own look at the address was found not to take in a
+  // build for players, 2026-10-04) and the developer's mode for this run.
+  if (q.has("dev")) args.push("--mode=dev", "--developer=on");
+  if (args.length) args.unshift("--");
+  return args;
+}
+if (typeof module !== "undefined") module.exports = trEngineArgs;
+
+    var args = [];
+    try { args = trEngineArgs(DEV, location.search); } catch (e) { args = []; }
+    // THE DEVICE'S CLASS (docs/plans/226 step 4): the budget the game's start
+    // screens are chosen under, from the probe and the view.
+    try {
+      window.__trDeviceClass = trDeviceClass(PROBE, { wide: innerWidth >= 900,
+        fine: !!(window.matchMedia && matchMedia("(pointer: fine)").matches) });
+      args = trDeviceArgs(args, window.__trDeviceClass);
+      // The memory step this load runs at (docs/plans/239): 0 is the full game.
+      if (window.__trRecovery && window.__trRecovery.step > 0) args.push("--memory-step=" + window.__trRecovery.step);
+    } catch (e) { /* the game takes its own default */ }
+    var engine = new Engine({
+      args: args,
+      canvas: document.getElementById("canvas"),
+      canvasResizePolicy: 2,
+      ensureCrossOriginIsolationHeaders: false,
+      executable: EXE,
+      experimentalVK: false,
+      fileSizes: (function () { var o = {}; o[PCK] = PCK_BYTES; o[EXE + ".wasm"] = WASM_BYTES; return o; })(),
+      focusCanvas: true,
+      gdextensionLibs: [],
+      mainPack: PCK
+    });
+    var missing = Engine.getMissingFeatures ? Engine.getMissingFeatures({ threads: MT }) : [];
+    if (missing.length) { fail("This browser is missing features the engine needs.", missing.join("\n")); return; }
+    stat.textContent = "engine  starting";
+    tick();
+    // THE BAKED SET IS OPTIONAL (docs/plans/136; the owner's iOS app died on
+    // its 404): fetched beside the engine, handed over only when it came, and
+    // the start held only until it settles. A set that does not come is said
+    // on the status line and in the diagnostics, and the walk builds live.
+    window.__trSetState = SET_PCK ? "fetching " + SET_PCK : "none in this build";
+    // Said on every progress line after, so the valley's count does not hide it.
+    var setNote = "";
+    // AFTER THE VALLEY, NEVER BEFORE (plan 108 step 4): the game's own pack
+    // comes first and alone; the set's fetch begins once it has arrived, so an
+    // optional 7 MB never slows the files the walk cannot start without. A
+    // valley that fails is the start's failure, said by the start; the set is
+    // then not fetched at all.
+    function fetchSet() {
+      stat.textContent = "downloading the valley's set, 0 of " + Math.round(SET_BYTES / 1048576) + " MB";
+      return getPart(SET_PCK);
+    }
+    var setReady = !SET_PCK ? Promise.resolve() : getPck().then(fetchSet, function () { return null; }).then(function (ab) {
+      if (ab === null) return;
+      window.__trSetPath = SET_PATH;
+      window.__trSetState = "fetched " + SET_PCK + " (" + mb(ab.byteLength) + ")";
+      return engine.preloadFile(ab, SET_PATH);
+    }).catch(function (err) {
+      window.__trSetPath = "";
+      window.__trSetState = WORDS.setMissing + ": " + String((err && err.message) || err);
+      setNote = "  -  " + WORDS.setMissing;
+      // The set's bytes will not come: the wait is the rest, and it is done.
+      rateDone();
+      stat.textContent = WORDS.setMissing;
+    });
+    var realStart = engine.start;
+    engine.start = function () {
+      var self = this, args = arguments;
+      return setReady.then(function () { return realStart.apply(self, args); });
+    };
+    engine.startGame({
+      // The bar is the bytes counted as they streamed (getPart); the engine's
+      // own count comes after they are all here, and only says so.
+      onProgress: function (cur, total) {
+        tick();
+        if (cur > 0 && total > 0 && cur >= total) stat.textContent = "valley  " + mb(total) + " here, starting" + setNote;
+      }
+    }).then(function () {
+      rateDone();
+      if (window.__trTick) window.__trTick("start");
+      setBar(1);
+      if (window.__trSplash) window.__trSplash.stop();
+      document.getElementById("boot").hidden = true;
+      document.getElementById("canvas").focus();
+      // The engine is up: the game's own breadcrumbs follow (TrLoadCrumb).
+      if (window.__trCrumb) window.__trCrumb("engine");
+      // THE ONE NOTICE (docs/plans/239): a load that recovered by itself says
+      // so for a few seconds over the game, and asks nothing.
+      var said = trRecoverWords(window.__trRecovery);
+      if (said) {
+        var t = document.getElementById("toast");
+        t.textContent = said;
+        t.hidden = false;
+        setTimeout(function () { t.hidden = true; }, 8000);
+      }
+    }, function (err) {
+      fail("The walk failed to start.", fetchWords(err));
+    });
+  };
+}());
+</script>
+<script>
+// The chosen runtime's loader, then the boot (the page may be reloading
+// under the isolation worker first: then nothing starts here).
+(function () {
+  if (window.__trIsolating) return;
+  var exe = (window.__trRuntime === "threaded") ? "godot-mt" : "godot";
+  var s = document.createElement("script");
+  s.src = exe + ".js";
+  s.onload = function () { if (window.__bootTransect) window.__bootTransect(); };
+  s.onerror = function () {
+    if (window.__trDogStop) window.__trDogStop();
+    document.getElementById("stat").textContent = exe + ".js failed to load";
+  };
+  document.body.appendChild(s);
+})();
+</script>

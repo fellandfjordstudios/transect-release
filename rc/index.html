@@ -511,9 +511,12 @@ if (typeof module !== "undefined") module.exports = trChannelRoute;
 // the page un-isolated, and the single-threaded runtime loads instead.
 (function () {
   var mt = ["godot-mt.0.wasm", "godot-mt.1.wasm", "godot-mt.2.wasm", "godot-mt.3.wasm", "godot-mt.4.wasm"];
+  // A host that sends the headers itself (itch's SharedArrayBuffer option,
+  // row 329) ships no shim: isolated or not, nothing is registered.
+  var shim = true;
   window.__trIsolated = self.crossOriginIsolated === true;
   if (window.__trLeaving) return;
-  if (!mt || window.__trIsolated || !("serviceWorker" in navigator)) return;
+  if (!mt || !shim || window.__trIsolated || !("serviceWorker" in navigator)) return;
   try { if (sessionStorage.getItem("tr-coi")) return; sessionStorage.setItem("tr-coi", "1"); } catch (e) { return; }
   window.__trIsolating = true;
   navigator.serviceWorker.register("coi.js").then(function (reg) {
@@ -1424,10 +1427,10 @@ if (typeof module !== "undefined") module.exports = { TR_RECOVER: TR_RECOVER, tr
   var PARTS = MT ? PARTS_MT : ["godot.0.wasm", "godot.1.wasm", "godot.2.wasm", "godot.3.wasm", "godot.4.wasm"];
   var WASM_BYTES = MT ? 38820072 : 39514754;
   window.__trRuntime = MT ? "threaded" : "single-threaded";
-  var PCK = "transect-f7a26046600b.pck";
-  var PCK_BYTES = 14202948;
+  var PCK = "transect-58c7c3bb073e.pck";
+  var PCK_BYTES = 14292836;
   // The valley's pack, in parts when it is over a chunk (tools/pack-web.py).
-  var PCK_PARTS = ["transect-f7a26046600b.0.pck", "transect-f7a26046600b.1.pck"];
+  var PCK_PARTS = ["transect-58c7c3bb073e.0.pck", "transect-58c7c3bb073e.1.pck"];
   // THE BAKED REVIEW SET'S PACK (docs/plans/108 step 4), when the build has
   // one: preloaded into the engine's files, and mounted by the game
   // (src/delivery/packs.gd) before the valley asks for a rung.
@@ -1493,12 +1496,12 @@ if (typeof module !== "undefined") module.exports = { TR_RECOVER: TR_RECOVER, tr
     return msg;
   }
   window.__trFetchWords = fetchWords;
-  var BUILD = "transect 0.1.7 6706ab863b  |  lib 7dafbb2";
+  var BUILD = "transect 0.1.7 be0c79aedf  |  lib e0eea63  |  pages";
   // The game keys the plants it keeps on the device by this (TrRungStore).
   window.__trBuild = BUILD;
   // THE COMMIT BUILT (tools/pack-web.py, docs/plans/111): apart from BUILD,
   // so a build of the same code keeps the plants the device already has.
-  window.__trCommit = "detached 20e1db4+";
+  window.__trCommit = "detached 937ff48+";
 
   var bar = document.getElementById("bar");
   var stat = document.getElementById("stat");
